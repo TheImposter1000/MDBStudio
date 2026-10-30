@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Data;
 using System.Data.OleDb;
 using System.Globalization;
@@ -25,7 +26,7 @@ public sealed class AccessSession
     private readonly string _provider;
     private readonly string? _databasePassword;
     private bool _hasBackup;
-    public const int PreviewRowLimit = 2000;
+    public const int DefaultPageSize = 5000;
     public string FilePath { get; }
 
     public AccessSession(string path, string? databasePassword = null)
@@ -118,40 +119,113 @@ public sealed class AccessSession
             .ToArray();
     }
 
-    public DataTable Load(string name)
+    /// <summary>
+    /// Fetches one page of a table, or every row if pageSize is zero.
+    /// No fixed record ceiling: paging prevents large MDBs from exhausting UI memory.
+    /// Pages are ordered by the table primary key where one is available.
+    /// </summary>
+    public TablePage LoadPage(string name, int pageIndex = 0, int pageSize = DefaultPageSize)
     {
+        if (pageIndex < 0 || pageSize < 0)
+            throw new ArgumentOutOfRangeException(nameof(pageIndex), "Page index and page size cannot be negative.");
+
         using var conn = Open();
-        using var adapter = new OleDbDataAdapter(
-            "SELECT TOP " + PreviewRowLimit + " * FROM " + QuoteName(name), conn)
+        using var countCommand = new OleDbCommand("SELECT COUNT(*) FROM " + QuoteName(name), conn);
+        long total = Convert.ToInt64(countCommand.ExecuteScalar(), CultureInfo.InvariantCulture);
+
+        if (pageSize == 0) pageIndex = 0;
+        else if (total > 0 && (long)pageIndex * pageSize >= total)
+            pageIndex = (int)Math.Min(int.MaxValue, (total - 1) / pageSize);
+
+        long start = (long)pageIndex * pageSize;
+        if (start > int.MaxValue)
+            throw new InvalidOperationException("This page is beyond the supported Access record offset.");
+
+        // Access SQL has no OFFSET syntax. DbDataAdapter supports startRecord/maximum
+        // and lets the UI page across the entire result set without a TOP 2000 ceiling.
+        // When there is a primary key, ordering gives stable page boundaries.
+        var primaryKeyNames = FindPrimaryKeys(conn, name);
+        string orderBy = primaryKeyNames.Count == 0 ? "" : " ORDER BY " +
+            string.Join(", ", primaryKeyNames.Select(QuoteName));
+        string sql = "SELECT * FROM " + QuoteName(name) + orderBy;
+
+        using var adapter = new OleDbDataAdapter(sql, conn)
         {
             MissingSchemaAction = MissingSchemaAction.AddWithKey
         };
         var table = new DataTable(name) { Locale = CultureInfo.InvariantCulture };
-        adapter.Fill(table);
+        if (pageSize == 0)
+            adapter.Fill(table);
+        else
+            adapter.Fill((int)start, pageSize, table);
 
-        if (table.PrimaryKey.Length == 0)
+        // Some Access table layouts do not return a primary key during Fill.
+        if (table.PrimaryKey.Length == 0 && primaryKeyNames.Count > 0)
         {
-            try
-            {
-                var primaryKeys = conn.GetOleDbSchemaTable(OleDbSchemaGuid.Primary_Keys, new object?[] { null, null, name });
-                if (primaryKeys is not null)
-                {
-                    var keys = primaryKeys.Rows.Cast<DataRow>()
-                        .OrderBy(r => r.Table.Columns.Contains("ORDINAL") && r["ORDINAL"] != DBNull.Value
-                            ? Convert.ToInt32(r["ORDINAL"], CultureInfo.InvariantCulture) : 0)
-                        .Select(r => Convert.ToString(r["COLUMN_NAME"]) ?? "")
-                        .Where(column => table.Columns.Contains(column))
-                        .Select(column => table.Columns[column]!)
-                        .ToArray();
-                    if (keys.Length > 0) table.PrimaryKey = keys;
-                }
-            }
-            catch (OleDbException)
-            {
-                // Without an identifiable key the UI intentionally stays read-only.
-            }
+            var columns = primaryKeyNames
+                .Where(table.Columns.Contains)
+                .Select(column => table.Columns[column]!)
+                .ToArray();
+            if (columns.Length == primaryKeyNames.Count)
+                table.PrimaryKey = columns;
         }
-        return table;
+        return new TablePage(table, total, pageIndex, pageSize);
+    }
+
+    private static IReadOnlyList<string> FindPrimaryKeys(OleDbConnection conn, string name)
+    {
+        try
+        {
+            var schema = conn.GetOleDbSchemaTable(OleDbSchemaGuid.Primary_Keys,
+                new object?[] { null, null, name });
+            if (schema is null) return Array.Empty<string>();
+            return schema.Rows.Cast<DataRow>()
+                .OrderBy(row => row.Table.Columns.Contains("ORDINAL") &&
+                    row["ORDINAL"] != DBNull.Value
+                    ? Convert.ToInt32(row["ORDINAL"], CultureInfo.InvariantCulture) : 0)
+                .Select(row => Convert.ToString(row["COLUMN_NAME"]) ?? "")
+                .Where(column => !string.IsNullOrWhiteSpace(column))
+                .ToArray();
+        }
+        catch (OleDbException)
+        {
+            // Without a confirmed primary key the table remains read-only.
+            return Array.Empty<string>();
+        }
+    }
+
+    /// <summary>Streams the entire saved table to CSV, not just the displayed page.</summary>
+    public long ExportTableCsv(string name, string destination)
+    {
+        using var conn = Open();
+        using var command = new OleDbCommand("SELECT * FROM " + QuoteName(name), conn);
+        using var reader = command.ExecuteReader()
+            ?? throw new InvalidOperationException("Access did not return a table reader.");
+        using var writer = new StreamWriter(destination, false, new UTF8Encoding(true));
+        writer.WriteLine(string.Join(",", Enumerable.Range(0, reader.FieldCount)
+            .Select(i => CsvCell(reader.GetName(i)))));
+        long rows = 0;
+        while (reader.Read())
+        {
+            writer.WriteLine(string.Join(",", Enumerable.Range(0, reader.FieldCount)
+                .Select(i => CsvCell(reader.GetValue(i)))));
+            rows++;
+        }
+        return rows;
+    }
+
+    private static string CsvCell(object value)
+    {
+        string raw = value switch
+        {
+            null or DBNull => "",
+            DateTime date => date.ToString("O", CultureInfo.InvariantCulture),
+            byte[] bytes => Convert.ToBase64String(bytes),
+            _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? ""
+        };
+        // Prevent spreadsheet applications from interpreting untrusted cells as formulas.
+        if (raw.Length > 0 && "=+-@\t\r".Contains(raw[0])) raw = "'" + raw;
+        return "\"" + raw.Replace("\"", "\"\"") + "\"";
     }
 
     private static OleDbType GetOleDbType(Type type, int maxLength)
@@ -286,7 +360,9 @@ public sealed class AccessSession
         using var conn = Open();
         using var adapter = new OleDbDataAdapter(sql, conn);
         var result = new DataTable("SQL results");
-        adapter.Fill(0, PreviewRowLimit, result);
+        adapter.Fill(result);
         return result;
     }
 }
+
+public sealed record TablePage(DataTable Rows, long TotalRecords, int PageIndex, int PageSize);

@@ -1,9 +1,8 @@
 using Microsoft.Win32;
+using System.Diagnostics;
 using System.ComponentModel;
 using System.Data;
-using System.Globalization;
 using System.IO;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -15,6 +14,10 @@ public partial class MainWindow : Window
     private DataTable? _table;
     private string? _currentName;
     private bool _suppressSelection;
+    private bool _suppressPageSizeChange;
+    private int _pageSize = AccessSession.DefaultPageSize;
+    private int _pageIndex;
+    private long _totalRecords;
 
     public MainWindow() => InitializeComponent();
 
@@ -67,6 +70,8 @@ public partial class MainWindow : Window
             _session = next;
             _table = null;
             _currentName = null;
+            _pageIndex = 0;
+            _totalRecords = 0;
             _suppressSelection = true;
             TableList.ItemsSource = names;
             TableList.SelectedIndex = -1;
@@ -79,6 +84,9 @@ public partial class MainWindow : Window
             SaveButton.IsEnabled = false;
             BackupButton.IsEnabled = true;
             ExportButton.IsEnabled = false;
+            PreviousPageButton.IsEnabled = false;
+            NextPageButton.IsEnabled = false;
+            PageInfoLabel.Text = "Choose a table";
             Status("Opened " + Path.GetFileName(dialog.FileName) + ". " + names.Count + " tables found.");
         }
         catch (Exception ex)
@@ -100,18 +108,22 @@ public partial class MainWindow : Window
             _suppressSelection = false;
             return;
         }
-        LoadTable(name);
+        LoadTable(name, 0);
     }
 
-    private void LoadTable(string name)
+    private void LoadTable(string name, int requestedPage)
     {
         try
         {
-            var table = _session!.Load(name);
+            var page = _session!.LoadPage(name, requestedPage, _pageSize);
+            var table = page.Rows;
             _table = table;
             _currentName = name;
+            _pageIndex = page.PageIndex;
+            _totalRecords = page.TotalRecords;
             RecordsGrid.ItemsSource = table.DefaultView;
-            var writable = table.PrimaryKey.Length != 0;
+
+            bool writable = table.PrimaryKey.Length != 0;
             RecordsGrid.IsReadOnly = !writable;
             RecordsGrid.CanUserAddRows = writable;
             RecordsGrid.CanUserDeleteRows = writable;
@@ -119,15 +131,87 @@ public partial class MainWindow : Window
             ExportButton.IsEnabled = true;
             TableLabel.Text = name;
             KeyLabel.Text = writable ? "Edit enabled (primary key detected)" : "Read only (no primary key)";
-            Status("Loaded " + table.Rows.Count + " records (maximum " + AccessSession.PreviewRowLimit + ").");
+            UpdatePageControls(table.Rows.Count);
+            Status($"Loaded {table.Rows.Count:N0} rows from {name}. Total: {_totalRecords:N0}. No 2,000-row ceiling.");
         }
         catch (Exception ex) { Error("Could not load table", ex); }
+    }
+
+    private void UpdatePageControls(int pageRows)
+    {
+        PreviousPageButton.IsEnabled = _currentName is not null && _pageSize > 0 && _pageIndex > 0;
+        NextPageButton.IsEnabled = _currentName is not null && _pageSize > 0 &&
+            ((long)_pageIndex + 1) * _pageSize < _totalRecords;
+
+        if (_currentName is null)
+        {
+            PageInfoLabel.Text = "Choose a table";
+            return;
+        }
+
+        if (_totalRecords == 0)
+        {
+            PageInfoLabel.Text = "0 records";
+            return;
+        }
+        if (_pageSize == 0)
+        {
+            PageInfoLabel.Text = $"All {_totalRecords:N0} records";
+            return;
+        }
+        long start = (long)_pageIndex * _pageSize + 1;
+        long finish = start + pageRows - 1;
+        long pages = (_totalRecords - 1) / _pageSize + 1;
+        PageInfoLabel.Text = $"Records {start:N0} to {finish:N0} of {_totalRecords:N0} | Page {_pageIndex + 1:N0} of {pages:N0}";
+    }
+
+    private void PreviousPage_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentName is null || _pageIndex == 0 || !DiscardPending()) return;
+        LoadTable(_currentName, _pageIndex - 1);
+    }
+
+    private void NextPage_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentName is null || _pageSize == 0 ||
+            ((long)_pageIndex + 1) * _pageSize >= _totalRecords || !DiscardPending()) return;
+        LoadTable(_currentName, _pageIndex + 1);
+    }
+
+    private void PageSize_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressPageSizeChange || _session is null || _currentName is null ||
+            PageSizeCombo.SelectedItem is not ComboBoxItem selection ||
+            !int.TryParse(Convert.ToString(selection.Tag), out var newSize) || newSize == _pageSize)
+            return;
+
+        if (!DiscardPending())
+        {
+            _suppressPageSizeChange = true;
+            try
+            {
+                foreach (var item in PageSizeCombo.Items.OfType<ComboBoxItem>())
+                {
+                    if (int.TryParse(Convert.ToString(item.Tag), out var tagSize) &&
+                        tagSize == _pageSize)
+                    {
+                        PageSizeCombo.SelectedItem = item;
+                        break;
+                    }
+                }
+            }
+            finally { _suppressPageSizeChange = false; }
+            return;
+        }
+
+        _pageSize = newSize;
+        LoadTable(_currentName, 0);
     }
 
     private void Reload_Click(object sender, RoutedEventArgs e)
     {
         if (_currentName is null || !DiscardPending()) return;
-        LoadTable(_currentName);
+        LoadTable(_currentName, _pageIndex);
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
@@ -145,7 +229,7 @@ public partial class MainWindow : Window
             }
             int changed = _session.Save(_table);
             string current = _currentName;
-            LoadTable(current);  // Re-read autogenerated IDs and server-side defaults.
+            LoadTable(current, _pageIndex);  // Re-read autogenerated IDs and server-side defaults.
             Status("Saved " + changed + " changes. Backup exists in the MDBStudio Backups folder.");
         }
         catch (Exception ex) { Error("Save failed. Changes were rolled back when possible.", ex); }
@@ -169,24 +253,19 @@ public partial class MainWindow : Window
         {
             var results = _session.Select(SqlInput.Text);
             QueryGrid.ItemsSource = results.DefaultView;
-            Status("Query returned " + results.Rows.Count + " rows (maximum " + AccessSession.PreviewRowLimit + ").");
+            Status("Query returned " + results.Rows.Count.ToString("N0") + " rows.");
         }
         catch (Exception ex) { Error("Query failed", ex); }
     }
 
-    private static string CsvCell(object value)
-    {
-        var raw = value == DBNull.Value ? "" :
-            value is DateTime dt ? dt.ToString("O", CultureInfo.InvariantCulture) :
-            Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
-        // Avoid Excel formula execution when opening exported CSV.
-        if (raw.Length > 0 && "=+-@\t\r".Contains(raw[0])) raw = "'" + raw;
-        return "\"" + raw.Replace("\"", "\"\"") + "\"";
-    }
-
     private void Export_Click(object sender, RoutedEventArgs e)
     {
-        if (_table is null || _currentName is null) return;
+        if (_session is null || _currentName is null) return;
+        if (_table?.GetChanges() is not null &&
+            MessageBox.Show("The export includes all SAVED database records, not unsaved edits. Continue?",
+                "Export entire table", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+
         var dialog = new SaveFileDialog
         {
             Filter = "CSV files (*.csv)|*.csv",
@@ -196,17 +275,52 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) != true) return;
         try
         {
-            using var writer = new StreamWriter(dialog.FileName, false, new UTF8Encoding(true));
-            var columns = _table.Columns.Cast<DataColumn>().ToArray();
-            writer.WriteLine(string.Join(",", columns.Select(c => CsvCell(c.ColumnName))));
-            foreach (DataRow row in _table.Rows)
-            {
-                if (row.RowState == DataRowState.Deleted) continue;
-                writer.WriteLine(string.Join(",", columns.Select(c => CsvCell(row[c]))));
-            }
-            Status("Exported loaded rows to " + dialog.FileName);
+            long count = _session.ExportTableCsv(_currentName, dialog.FileName);
+            Status($"Exported all {count:N0} saved records from {_currentName} to {dialog.FileName}.");
         }
-        catch (Exception ex) { Error("Export failed", ex); }
+        catch (Exception ex) { Error("CSV export failed", ex); }
+    }
+
+    private async void CheckUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        CheckUpdatesButton.IsEnabled = false;
+        Status("Checking the official MDB Studio GitHub releases...");
+        try
+        {
+            UpdateResult result = await UpdateChecker.CheckAsync();
+            if (!result.UpdateAvailable)
+            {
+                Status($"MDB Studio {result.CurrentTag} is current; latest release is {result.LatestTag}.");
+                MessageBox.Show($"You're using {result.CurrentTag}. The newest published release is {result.LatestTag}.",
+                    "MDB Studio updates", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            Status($"Update found: {result.LatestTag}. Open GitHub to review the release.");
+            var answer = MessageBox.Show(
+                $"An update is available.\n\nCurrent: {result.CurrentTag}\nLatest: {result.LatestTag}\n\n" +
+                "The release may be an unverified preview. Always respect Windows Defender warnings. " +
+                "MDB Studio will not download, install, or execute updates automatically.\n\n" +
+                "Open the official GitHub release page in your browser?",
+                "MDB Studio update available",
+                MessageBoxButton.YesNo, MessageBoxImage.Information);
+            if (answer == MessageBoxResult.Yes)
+            {
+                Process.Start(new ProcessStartInfo(result.LatestUrl.AbsoluteUri)
+                {
+                    UseShellExecute = true
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Status("Unable to check for updates. Check your internet connection.");
+            Error("Update check failed", ex);
+        }
+        finally
+        {
+            CheckUpdatesButton.IsEnabled = true;
+        }
     }
 
     private void Window_Closing(object sender, CancelEventArgs e)
