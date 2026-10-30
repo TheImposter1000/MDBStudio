@@ -108,7 +108,7 @@
         </StackPanel>
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
           <Border Background="#ECF6FE" CornerRadius="6" Padding="10,7" Margin="4,0">
-            <TextBlock Text="MDB Studio v1.0.2" FontSize="11" Foreground="#2467A8"/>
+            <TextBlock Text="MDB Studio v1.0.3" FontSize="11" Foreground="#2467A8"/>
           </Border>
           <Button x:Name="CheckUpdatesButton" Style="{StaticResource ToolButton}" Click="CheckUpdates_Click" Content="Check &amp; install updates"/>
         </StackPanel>
@@ -132,14 +132,14 @@
             <StackPanel><TextBlock Text="⇧" FontSize="21" TextAlignment="Center"/><TextBlock Text="Export all CSV" FontSize="11"/></StackPanel>
           </Button>
           <Border Width="1" Height="58" Background="#DDE6F3" Margin="10,0"/>
-          <Button x:Name="CopyButton" Style="{StaticResource ToolButton}" Click="CopyRecords_Click" IsEnabled="False" ToolTip="Copy selected rows (Ctrl+C)">
-            <StackPanel><TextBlock Text="▤" FontSize="21" TextAlignment="Center"/><TextBlock Text="Copy records" FontSize="11"/></StackPanel>
+          <Button x:Name="CopyButton" Style="{StaticResource ToolButton}" Click="CopyCells_Click" IsEnabled="False" ToolTip="Copy selected cells (Ctrl+C)">
+            <StackPanel><TextBlock Text="▤" FontSize="21" TextAlignment="Center"/><TextBlock Text="Copy cells" FontSize="11"/></StackPanel>
           </Button>
-          <Button x:Name="PasteButton" Style="{StaticResource ToolButton}" Click="PasteRecords_Click" IsEnabled="False" ToolTip="Paste rows from MDB Studio or a spreadsheet (Ctrl+V)">
-            <StackPanel><TextBlock Text="▥" FontSize="21" TextAlignment="Center"/><TextBlock Text="Paste records" FontSize="11"/></StackPanel>
+          <Button x:Name="PasteButton" Style="{StaticResource ToolButton}" Click="PasteCells_Click" IsEnabled="False" ToolTip="Paste into selected cells, repeating a single value across your selection (Ctrl+V)">
+            <StackPanel><TextBlock Text="▥" FontSize="21" TextAlignment="Center"/><TextBlock Text="Paste cells" FontSize="11"/></StackPanel>
           </Button>
-          <Button x:Name="DuplicateButton" Style="{StaticResource ToolButton}" Click="DuplicateRecords_Click" IsEnabled="False" ToolTip="Duplicate selected rows with new IDs and numbered Recordname values">
-            <StackPanel><TextBlock Text="▧" FontSize="21" TextAlignment="Center"/><TextBlock Text="Duplicate" FontSize="11"/></StackPanel>
+          <Button x:Name="FillDownButton" Style="{StaticResource ToolButton}" Click="FillDown_Click" IsEnabled="False" ToolTip="Fill selected column cells using the value in the topmost selected cell (Ctrl+D)">
+            <StackPanel><TextBlock Text="▧" FontSize="21" TextAlignment="Center"/><TextBlock Text="Fill down" FontSize="11"/></StackPanel>
           </Button>
           <Button x:Name="DeleteButton" Style="{StaticResource ToolButton}" Click="DeleteRecords_Click" IsEnabled="False">
             <StackPanel><TextBlock Text="✕" FontSize="21" TextAlignment="Center" Foreground="#D44B55"/><TextBlock Text="Delete rows" FontSize="11"/></StackPanel>
@@ -210,15 +210,15 @@
                 </StackPanel>
               </Border>
               <DataGrid x:Name="RecordsGrid" AutoGenerateColumns="True" CanUserAddRows="False"
-                        CanUserDeleteRows="False" IsReadOnly="True" SelectionUnit="FullRow" SelectionMode="Extended"
+                        CanUserDeleteRows="False" IsReadOnly="True" SelectionUnit="CellOrRowHeader" SelectionMode="Extended"
                         SelectedCellsChanged="RecordsSelection_Changed" PreviewKeyDown="RecordsGrid_PreviewKeyDown"
                         PreviewMouseRightButtonDown="RecordsGrid_PreviewMouseRightButtonDown"
                         Background="White" FontSize="12">
                 <DataGrid.ContextMenu>
                   <ContextMenu>
-                    <MenuItem Header="Copy selected records" Click="CopyRecords_Click"/>
-                    <MenuItem Header="Paste records" Click="PasteRecords_Click"/>
-                    <MenuItem Header="Duplicate selected records" Click="DuplicateRecords_Click"/>
+                    <MenuItem Header="Copy selected cells" Click="CopyCells_Click"/>
+                    <MenuItem Header="Paste into selected cells" Click="PasteCells_Click"/>
+                    <MenuItem Header="Fill selected cells down" Click="FillDown_Click"/>
                     <Separator/>
                     <MenuItem Header="Delete selected records" Click="DeleteRecords_Click"/>
                   </ContextMenu>
