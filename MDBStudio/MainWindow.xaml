@@ -108,9 +108,9 @@
         </StackPanel>
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
           <Border Background="#ECF6FE" CornerRadius="6" Padding="10,7" Margin="4,0">
-            <TextBlock Text="MDB Studio v1.0.1" FontSize="11" Foreground="#2467A8"/>
+            <TextBlock Text="MDB Studio v1.0.2" FontSize="11" Foreground="#2467A8"/>
           </Border>
-          <Button x:Name="CheckUpdatesButton" Style="{StaticResource ToolButton}" Click="CheckUpdates_Click" Content="Check updates"/>
+          <Button x:Name="CheckUpdatesButton" Style="{StaticResource ToolButton}" Click="CheckUpdates_Click" Content="Check &amp; install updates"/>
         </StackPanel>
       </Grid>
     </Border>
