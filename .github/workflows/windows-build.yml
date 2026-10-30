@@ -26,12 +26,18 @@ jobs:
         run: dotnet build MDBStudio/MDBStudio.csproj --configuration Release --no-restore
       - name: Test duplicate and paste identity generation
         run: dotnet run --project MDBStudio.RegressionTests/MDBStudio.RegressionTests.csproj -c Release
+      - name: Test updater checksum and rollback
+        run: dotnet run --project MDBStudio.Updater/MDBStudio.Updater.csproj -c Release -- --self-test
       - name: Publish Windows x64 application
         shell: pwsh
         run: |
           dotnet publish MDBStudio/MDBStudio.csproj -c Release -r win-x64 --self-contained true -o publish
           if ($LASTEXITCODE -ne 0) { throw "Publishing failed" }
           if (-not (Test-Path "publish/MDBStudio.exe")) { throw "Expected EXE was not generated" }
+          dotnet publish MDBStudio.Updater/MDBStudio.Updater.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o updater-publish
+          if ($LASTEXITCODE -ne 0) { throw "Updater build failed." }
+          Copy-Item "updater-publish/MDBStudio.Updater.exe" "publish/MDBStudio.Updater.exe"
+          if (-not (Test-Path "publish/MDBStudio.Updater.exe")) { throw "Updater EXE missing." }
           Get-FileHash "publish/MDBStudio.exe" -Algorithm SHA256 | Format-List | Out-File "publish/SHA256.txt"
       - name: Upload build artifact for review
         uses: actions/upload-artifact@v4
