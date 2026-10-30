@@ -10,7 +10,7 @@ on:
       tag:
         description: "Unique stable version tag (for example v1.0.1)"
         required: true
-        default: "v1.0.0"
+        default: "v1.0.1"
         type: string
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ inputs.tag || 'v1.0.0' }}
+      RELEASE_TAG: ${{ inputs.tag || 'v1.0.1' }}
     steps:
       - name: Check out reviewed source
         uses: actions/checkout@v4
@@ -35,7 +35,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
-            throw "Normal releases require semantic version tags such as v1.0.0."
+            throw "Normal releases require semantic version tags such as v1.0.1."
           }
           [xml] $project = Get-Content "MDBStudio/MDBStudio.csproj"
           $projectVersion = [string]$project.Project.PropertyGroup.Version
@@ -50,6 +50,8 @@ jobs:
         run: dotnet restore MDBStudio/MDBStudio.csproj
       - name: Compile
         run: dotnet build MDBStudio/MDBStudio.csproj --configuration Release --no-restore
+      - name: Test duplicate and paste identity generation
+        run: dotnet run --project MDBStudio.RegressionTests/MDBStudio.RegressionTests.csproj -c Release
       - name: Publish Windows x64
         shell: pwsh
         run: |
@@ -70,7 +72,7 @@ jobs:
             ""
             "Standard Windows release, published from the C# and WPF source in this repository."
             ""
-            "Includes the redesigned MDB Studio interface and app icon, MDB/ACCDB database browsing, large-table navigation, record copy/paste, duplication and deletion controls, read-only SQL, backups, full-table CSV export and Check updates."
+            "Includes the redesigned MDB Studio interface and app icon, MDB/ACCDB database browsing, large-table navigation, collision-aware record copy/paste with new identifiers, multi-row duplication and deletion controls, read-only SQL, backups, full-table CSV export and Check updates."
             ""
             "The ZIP is a portable application folder, not an installer. Extract all files together and launch MDBStudio.exe."
             ""

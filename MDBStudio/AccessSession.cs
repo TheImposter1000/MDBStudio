@@ -271,6 +271,47 @@ public sealed class AccessSession
         return destination;
     }
 
+    /// <summary>
+    /// Reads key values and numbered Recordname values from the entire saved
+    /// table so copy/paste cannot generate identifiers based only on one page.
+    /// This is read-only and does not modify or upload the MDB file.
+    /// </summary>
+    internal PasteIdentityCatalog ReadPasteIdentityCatalog(DataTable table)
+    {
+        if (table.PrimaryKey.Length == 0)
+            throw new InvalidOperationException("A primary key is required to create new records.");
+
+        var catalog = new PasteIdentityCatalog();
+        var keys = table.PrimaryKey;
+        var nameColumn = PasteIdentityCatalog.FindRecordName(table);
+        var fields = keys.Select(k => k.ColumnName).ToList();
+        if (nameColumn is not null &&
+            !fields.Contains(nameColumn.ColumnName, StringComparer.OrdinalIgnoreCase))
+            fields.Add(nameColumn.ColumnName);
+
+        using var conn = Open();
+        using var command = new OleDbCommand("SELECT " +
+            string.Join(", ", fields.Select(QuoteName)) + " FROM " +
+            QuoteName(table.TableName), conn);
+        using var reader = command.ExecuteReader()
+            ?? throw new InvalidOperationException("Could not enumerate existing record identifiers.");
+
+        int nameOrdinal = nameColumn is null ? -1 :
+            fields.FindIndex(field => string.Equals(field, nameColumn.ColumnName,
+                StringComparison.OrdinalIgnoreCase));
+        while (reader.Read())
+        {
+            object?[] values = new object?[keys.Length];
+            for (int i = 0; i < keys.Length; i++)
+                values[i] = reader.GetValue(i);
+            string? recordName = nameOrdinal < 0 || reader.IsDBNull(nameOrdinal) ? null :
+                Convert.ToString(reader.GetValue(nameOrdinal), CultureInfo.InvariantCulture);
+            catalog.Include(values, recordName);
+        }
+        catalog.IncludePending(table);
+        return catalog;
+    }
+
     public int Save(DataTable table)
     {
         var modified = table.Rows.Cast<DataRow>().Where(row =>

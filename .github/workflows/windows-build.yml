@@ -24,6 +24,8 @@ jobs:
         run: dotnet restore MDBStudio/MDBStudio.csproj
       - name: Compile
         run: dotnet build MDBStudio/MDBStudio.csproj --configuration Release --no-restore
+      - name: Test duplicate and paste identity generation
+        run: dotnet run --project MDBStudio.RegressionTests/MDBStudio.RegressionTests.csproj -c Release
       - name: Publish Windows x64 application
         shell: pwsh
         run: |
