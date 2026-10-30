@@ -1,0 +1,72 @@
+<Window x:Class="MDBStudio.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MDB Studio | Preview" Height="800" Width="1280" MinHeight="600" MinWidth="920"
+        Background="#F5F7FB" FontFamily="Segoe UI" Closing="Window_Closing">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="66"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="34"/>
+    </Grid.RowDefinitions>
+    <Border Grid.Row="0" Background="White" BorderBrush="#DFE5EE" BorderThickness="0,0,0,1">
+      <DockPanel Margin="18,0" LastChildFill="True">
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button Content="Open database" Width="116" Margin="4" Padding="10" Click="Open_Click"/>
+          <Button x:Name="SaveButton" Content="Save changes" Width="110" Margin="4" Padding="10" Click="Save_Click" IsEnabled="False"/>
+          <Button x:Name="BackupButton" Content="Backup" Width="80" Margin="4" Padding="10" Click="Backup_Click" IsEnabled="False"/>
+          <Button x:Name="ExportButton" Content="Export CSV" Width="100" Margin="4" Padding="10" Click="Export_Click" IsEnabled="False"/>
+        </StackPanel>
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="MDB Studio" FontSize="21" FontWeight="Bold" Foreground="#233656"/>
+          <TextBlock x:Name="FileLabel" Text="Local Microsoft Access database editor | Preview" FontSize="11" Foreground="#677992" TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="250"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+      <Border Grid.Column="0" Background="#1D304C">
+        <DockPanel Margin="14">
+          <TextBlock DockPanel.Dock="Top" Text="DATABASE TABLES" Foreground="#DEE7F4" FontWeight="SemiBold" FontSize="12" Margin="4,8,4,15"/>
+          <TextBlock DockPanel.Dock="Bottom" Text="Open a copy of your database. Changes are backed up before the first save." Foreground="#B9C9DF" TextWrapping="Wrap" Margin="4,12,4,8" FontSize="11"/>
+          <ListBox x:Name="TableList" SelectionChanged="TableList_SelectionChanged" Background="Transparent" Foreground="White" BorderThickness="0" FontSize="13"/>
+        </DockPanel>
+      </Border>
+      <TabControl Grid.Column="1" Margin="12" Background="White">
+        <TabItem Header="Datasheet" Padding="14,8">
+          <DockPanel Margin="12">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,3,0,12">
+              <TextBlock x:Name="TableLabel" Text="Choose a table to browse" FontWeight="SemiBold" FontSize="17" VerticalAlignment="Center" Foreground="#243A5B"/>
+              <Button Content="Reload" Margin="18,0,0,0" Padding="12,6" Click="Reload_Click"/>
+              <TextBlock x:Name="KeyLabel" Text="" Margin="16,0,0,0" Foreground="#7C6175" VerticalAlignment="Center"/>
+            </StackPanel>
+            <DataGrid x:Name="RecordsGrid" AutoGenerateColumns="True" CanUserAddRows="False"
+                      CanUserDeleteRows="False" IsReadOnly="True" SelectionUnit="CellOrRowHeader"
+                      AlternatingRowBackground="#F3F6FB" GridLinesVisibility="Horizontal"
+                      HeadersVisibility="All" />
+          </DockPanel>
+        </TabItem>
+        <TabItem Header="SQL (read only)" Padding="14,8">
+          <Grid Margin="14">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="130"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <TextBlock Text="SELECT queries only. Action queries are deliberately disabled in this preview." Foreground="#53647C" TextWrapping="Wrap" Margin="0,0,0,10"/>
+            <TextBox x:Name="SqlInput" Grid.Row="1" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="13" TextWrapping="Wrap"/>
+            <Button Grid.Row="2" Content="Run SELECT" HorizontalAlignment="Left" Padding="18,8" Margin="0,10" Click="Query_Click"/>
+            <DataGrid x:Name="QueryGrid" Grid.Row="3" IsReadOnly="True" AutoGenerateColumns="True" CanUserAddRows="False" CanUserDeleteRows="False"/>
+          </Grid>
+        </TabItem>
+      </TabControl>
+    </Grid>
+    <Border Grid.Row="2" Background="White" BorderBrush="#DFE5EE" BorderThickness="0,1,0,0">
+      <TextBlock x:Name="StatusLabel" Text="Ready. Open a local MDB or ACCDB file." Foreground="#546781" FontSize="11" Margin="18,8"/>
+    </Border>
+  </Grid>
+</Window>

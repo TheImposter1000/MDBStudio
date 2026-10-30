@@ -1,0 +1,12 @@
+bin/
+obj/
+publish/
+*.user
+*.suo
+.vs/
+TestResults/
+*.mdb
+*.accdb
+*.laccdb
+*.ldb
+*.bak
