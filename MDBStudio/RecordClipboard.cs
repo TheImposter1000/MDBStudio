@@ -90,7 +90,13 @@ internal static class RecordClipboard
         return (fieldNames, rows);
     }
 
-    public static int Paste(DataTable table, bool duplicateSelected, IReadOnlyList<DataRow>? selected = null)
+    /// <summary>
+    /// Copies data into NEW rows. When pasted keys or Recordname values are
+    /// already used, generate fresh values using the full-table catalog.
+    /// All rows remain unsaved until the explicit Save Changes operation.
+    /// </summary>
+    public static PasteResult Paste(DataTable table, PasteIdentityCatalog catalog,
+        bool duplicateSelected, IReadOnlyList<DataRow>? selected = null)
     {
         if (table.PrimaryKey.Length == 0)
             throw new InvalidOperationException("This table cannot be edited without a primary key.");
@@ -108,58 +114,106 @@ internal static class RecordClipboard
         {
             (fields, sourceRows) = ReadClipboard(table);
         }
+
         if (sourceRows.Length > 10000)
-            throw new InvalidOperationException("Paste at most 10,000 rows at a time.");
+            throw new InvalidOperationException("Paste at most 10,000 records at a time.");
+
+        var columns = table.Columns.Cast<DataColumn>().ToArray();
+        var fieldMap = fields.Select(field => columns.FirstOrDefault(c =>
+            string.Equals(c.ColumnName, field, StringComparison.OrdinalIgnoreCase))).ToArray();
+        if (fieldMap.All(c => c is null))
+            throw new InvalidOperationException("No clipboard columns match this table.");
 
         var keys = table.PrimaryKey;
-        if (duplicateSelected && keys.Any(k => !k.AutoIncrement))
-            throw new InvalidOperationException(
-                "This table uses manually assigned primary keys. Copy the rows into a spreadsheet, " +
-                "provide new unique IDs, then paste them back. Duplicating an existing ID is unsafe.");
-
-        var fieldMap = fields.Select(name => table.Columns.Cast<DataColumn>()
-            .FirstOrDefault(column => string.Equals(column.ColumnName, name, StringComparison.OrdinalIgnoreCase)))
-            .ToArray();
-        if (fieldMap.All(column => column is null))
-            throw new InvalidOperationException("No clipboard column names match the destination table.");
-
-        var existingKeys = new HashSet<string>(StringComparer.Ordinal);
-        foreach (DataRow row in table.Rows)
-        {
-            if (row.RowState != DataRowState.Deleted)
-                existingKeys.Add(KeyOf(row, keys));
-        }
-
+        var recordName = PasteIdentityCatalog.FindRecordName(table);
         var staged = new List<DataRow>();
+        int generatedIds = 0;
+        int generatedNames = 0;
+
         foreach (var values in sourceRows)
         {
             var row = table.NewRow();
             for (int i = 0; i < Math.Min(values.Length, fieldMap.Length); i++)
             {
-                DataColumn? col = fieldMap[i];
-                if (col is null || col.AutoIncrement || col.ReadOnly || !string.IsNullOrEmpty(col.Expression))
-                    continue;
+                var column = fieldMap[i];
+                if (column is null || column.AutoIncrement || column.ReadOnly ||
+                    !string.IsNullOrEmpty(column.Expression)) continue;
+
                 object? value = values[i];
-                if (value is null || value == DBNull.Value || (value is string t && t.Length == 0))
+                if (value is null || value == DBNull.Value ||
+                    (value is string t && t.Length == 0))
                 {
-                    row[col] = col.DataType == typeof(string) && !col.AllowDBNull ? "" : DBNull.Value;
+                    row[column] = column.DataType == typeof(string) && !column.AllowDBNull ?
+                        "" : DBNull.Value;
                     continue;
                 }
-
-                try { row[col] = ConvertField(value, col.DataType); }
+                try { row[column] = ConvertField(value, column.DataType); }
                 catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException or ArgumentException)
                 {
                     throw new InvalidOperationException(
-                        $"Invalid value for column '{col.ColumnName}' in pasted record {staged.Count + 1}: {ex.Message}", ex);
+                        $"Invalid value for '{column.ColumnName}' in pasted record {staged.Count + 1}: {ex.Message}", ex);
+                }
+            }
+
+            // TEW-style Recordname fields often contain sequential text IDs such
+            // as Prairie Cup013. Preserve the prefix and numbering width.
+            if (recordName is not null && !row.IsNull(recordName) &&
+                !recordName.ReadOnly && recordName.DataType == typeof(string))
+            {
+                string name = Convert.ToString(row[recordName], CultureInfo.InvariantCulture) ?? "";
+                if (catalog.UsedRecordNames.Contains(name))
+                {
+                    row[recordName] = catalog.GenerateText(name, true, recordName.MaxLength);
+                    generatedNames++;
                 }
             }
 
             if (keys.Any(k => !k.AutoIncrement && row.IsNull(k)))
                 throw new InvalidOperationException(
-                    "Pasted records require values for all manually assigned primary keys.");
-            string key = KeyOf(row, keys);
-            if (!existingKeys.Add(key))
-                throw new InvalidOperationException("Paste would create a duplicate primary key. No records were added.");
+                    "The pasted records have missing primary keys. Supply the required IDs before pasting.");
+
+            string key = PasteIdentityCatalog.KeyOf(row, keys);
+            if (catalog.UsedKeys.Contains(key))
+            {
+                if (keys.Length != 1 || keys[0].AutoIncrement || keys[0].ReadOnly)
+                    throw new InvalidOperationException(
+                        "This record has a duplicate composite or protected primary key. " +
+                        "MDB Studio cannot safely generate a replacement for this table structure.");
+
+                var identity = keys[0];
+                var type = identity.DataType;
+                if (type == typeof(int) || type == typeof(long) ||
+                    type == typeof(short) || type == typeof(byte))
+                {
+                    row[identity] = catalog.GenerateNumber(type);
+                }
+                else if (type == typeof(Guid))
+                {
+                    row[identity] = Guid.NewGuid();
+                }
+                else if (type == typeof(string))
+                {
+                    string original = Convert.ToString(row[identity], CultureInfo.InvariantCulture) ?? "";
+                    bool isRecordName = recordName == identity;
+                    row[identity] = catalog.GenerateText(original, isRecordName, identity.MaxLength);
+                    if (isRecordName) generatedNames++;
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"MDB Studio cannot safely generate a primary key of type {type.Name}. " +
+                        "Provide a unique primary key before pasting.");
+                }
+                generatedIds++;
+                key = PasteIdentityCatalog.KeyOf(row, keys);
+                if (catalog.UsedKeys.Contains(key))
+                    throw new InvalidOperationException(
+                        "Could not allocate a free record ID. No records were added.");
+            }
+
+            catalog.Include(keys.Select(k => row[k]).ToArray(),
+                recordName is null || row.IsNull(recordName) ? null :
+                Convert.ToString(row[recordName], CultureInfo.InvariantCulture));
             staged.Add(row);
         }
 
@@ -171,7 +225,7 @@ internal static class RecordClipboard
                 table.Rows.Add(row);
                 inserted.Add(row);
             }
-            return inserted.Count;
+            return new PasteResult(inserted.Count, generatedIds, generatedNames);
         }
         catch
         {
@@ -179,10 +233,6 @@ internal static class RecordClipboard
             throw;
         }
     }
-
-    private static string KeyOf(DataRow row, DataColumn[] keys) =>
-        string.Join("\u001f", keys.Select(k => row[k] == DBNull.Value ? "<null>" :
-            Convert.ToString(row[k], CultureInfo.InvariantCulture) ?? ""));
 
     private static object ConvertField(object value, Type type)
     {
@@ -200,3 +250,5 @@ internal static class RecordClipboard
         return Convert.ChangeType(value, type, CultureInfo.CurrentCulture);
     }
 }
+
+internal sealed record PasteResult(int Added, int GeneratedIds, int GeneratedNames);
