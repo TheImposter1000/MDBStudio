@@ -45,6 +45,7 @@
             </StackPanel>
             <DataGrid x:Name="RecordsGrid" AutoGenerateColumns="True" CanUserAddRows="False"
                       CanUserDeleteRows="False" IsReadOnly="True" SelectionUnit="CellOrRowHeader"
+                      EnableRowVirtualization="True" EnableColumnVirtualization="True"
                       AlternatingRowBackground="#F3F6FB" GridLinesVisibility="Horizontal"
                       HeadersVisibility="All" />
           </DockPanel>
