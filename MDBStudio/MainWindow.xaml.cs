@@ -22,6 +22,8 @@ public partial class MainWindow : Window
     private long _totalRecords;
     private IReadOnlyList<string> _allTables = Array.Empty<string>();
     private IReadOnlyList<DataRow>? _rightClickSelection;
+    private IReadOnlyList<DataGridCellInfo>? _rightClickCells;
+    private bool _applyingCellChanges;
 
     public MainWindow() => InitializeComponent();
 
@@ -133,13 +135,13 @@ public partial class MainWindow : Window
             _totalRecords = page.TotalRecords;
             RecordsGrid.ItemsSource = table.DefaultView;
             RecordSearchBox.Clear();
-            table.RowChanged += (_, _) => Dispatcher.BeginInvoke(UpdateActionStates);
-            table.RowDeleted += (_, _) => Dispatcher.BeginInvoke(UpdateActionStates);
+            table.RowChanged += (_, _) => { if (!_applyingCellChanges) Dispatcher.BeginInvoke(UpdateActionStates); };
+            table.RowDeleted += (_, _) => { if (!_applyingCellChanges) Dispatcher.BeginInvoke(UpdateActionStates); };
 
             bool writable = table.PrimaryKey.Length != 0;
             RecordsGrid.IsReadOnly = !writable;
             RecordsGrid.CanUserAddRows = writable;
-            RecordsGrid.CanUserDeleteRows = writable;
+            RecordsGrid.CanUserDeleteRows = false; // Explicit row deletion only; Delete key clears selected cells.
             SaveButton.IsEnabled = writable;
             ExportButton.IsEnabled = true;
             UpdateActionStates();
@@ -378,12 +380,12 @@ public partial class MainWindow : Window
     {
         bool open = _table is not null;
         bool writable = open && _table!.PrimaryKey.Length > 0;
-        bool selected = RecordsGrid.SelectedItems.OfType<DataRowView>()
-            .Any(row => row.Row.RowState != DataRowState.Deleted);
-        CopyButton.IsEnabled = open && selected;
-        PasteButton.IsEnabled = writable;
-        DuplicateButton.IsEnabled = writable && selected;
-        DeleteButton.IsEnabled = writable && selected;
+        int cellCount = RecordsGrid.SelectedCells.Count;
+        CopyButton.IsEnabled = open && cellCount > 0;
+        PasteButton.IsEnabled = writable && cellCount > 0;
+        FillDownButton.IsEnabled = writable && cellCount > 1;
+        DeleteButton.IsEnabled = writable &&
+            RecordsGrid.SelectedItems.OfType<DataRowView>().Any();
         if (open)
         {
             int dirty = _table!.Rows.Cast<DataRow>()
@@ -396,9 +398,6 @@ public partial class MainWindow : Window
 
     private IReadOnlyList<DataRow> SelectedRows(object? source = null)
     {
-        // WPF may change the row selection when a context menu opens.
-        // Preserve the complete pre-click selection when the menu was
-        // opened on an already selected row.
         if (source is MenuItem && _rightClickSelection is { Count: > 0 } context)
         {
             _rightClickSelection = null;
@@ -414,22 +413,16 @@ public partial class MainWindow : Window
     private void RecordsGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         _rightClickSelection = null;
+        _rightClickCells = null;
         if (e.OriginalSource is not DependencyObject element) return;
         DependencyObject? current = element;
         while (current is not null)
         {
-            if (current is DataGridRow row)
-            {
-                if (row.IsSelected)
-                {
-                    _rightClickSelection = RecordsGrid.SelectedItems
-                        .OfType<DataRowView>()
-                        .Select(item => item.Row)
-                        .Where(item => item.RowState != DataRowState.Deleted)
-                        .ToArray();
-                }
-                break;
-            }
+            if (current is DataGridCell cell && cell.IsSelected)
+                _rightClickCells = RecordsGrid.SelectedCells.ToArray();
+            if (current is DataGridRow row && row.IsSelected)
+                _rightClickSelection = RecordsGrid.SelectedItems.OfType<DataRowView>()
+                    .Select(view => view.Row).ToArray();
             current = VisualTreeHelper.GetParent(current);
         }
     }
@@ -439,71 +432,238 @@ public partial class MainWindow : Window
 
     private void RecordsGrid_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // When editing text inside a cell, use ordinary text editing shortcuts.
+        if (e.OriginalSource is TextBox or PasswordBox) return;
+
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 && e.Key == Key.C)
         {
-            CopyRecords_Click(sender, e);
+            CopyCells_Click(sender, e);
             e.Handled = true;
         }
         else if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 && e.Key == Key.V)
         {
-            PasteRecords_Click(sender, e);
+            PasteCells_Click(sender, e);
             e.Handled = true;
         }
-        else if (e.Key == Key.Delete && (Keyboard.Modifiers & ModifierKeys.Control) == 0)
+        else if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 && e.Key == Key.D)
         {
-            DeleteRecords_Click(sender, e);
+            FillDown_Click(sender, e);
+            e.Handled = true;
+        }
+        else if (Keyboard.Modifiers == ModifierKeys.None && e.Key == Key.Delete)
+        {
+            ClearCells_Click(sender, e);
             e.Handled = true;
         }
     }
 
-    private void CopyRecords_Click(object sender, RoutedEventArgs e)
+    private sealed record SelectedGridCell(int RowIndex, int ColumnIndex, DataRow Row, DataColumn Column);
+
+    private IReadOnlyList<SelectedGridCell> SelectedCells(object? source = null)
     {
-        if (_table is null) return;
-        try
+        if (_table is null) return Array.Empty<SelectedGridCell>();
+
+        var infos = source is MenuItem && _rightClickCells is { Count: > 0 }
+            ? _rightClickCells
+            : RecordsGrid.SelectedCells.ToArray();
+        _rightClickCells = null;
+        if (infos.Count == 0 && RecordsGrid.CurrentCell.Item is DataRowView &&
+            RecordsGrid.CurrentCell.Column is not null)
+            infos = new[] { RecordsGrid.CurrentCell };
+
+        var visibleRows = _table.DefaultView.Cast<DataRowView>()
+            .Select((view, index) => (view.Row, index))
+            .ToDictionary(pair => pair.Row, pair => pair.index);
+        var cells = new List<SelectedGridCell>();
+        foreach (var info in infos)
         {
-            RecordsGrid.CommitEdit(DataGridEditingUnit.Cell, true);
-            RecordsGrid.CommitEdit(DataGridEditingUnit.Row, true);
-            var rows = SelectedRows(sender);
-            if (rows.Count == 0) { Status("Select one or more complete rows to copy."); return; }
-            if (rows.Count > 10000)
-                throw new InvalidOperationException("Copy no more than 10,000 records at once.");
-            int count = RecordClipboard.Copy(_table, rows);
-            Status($"Copied {count:N0} complete records to the clipboard (Ctrl+C).");
+            if (info.Item is not DataRowView view ||
+                info.Column?.Header is null ||
+                !visibleRows.TryGetValue(view.Row, out int rowIndex) ||
+                view.Row.RowState == DataRowState.Deleted)
+                continue;
+            string columnName = Convert.ToString(info.Column.Header) ?? "";
+            if (!_table.Columns.Contains(columnName)) continue;
+            cells.Add(new SelectedGridCell(rowIndex, info.Column.DisplayIndex,
+                view.Row, _table.Columns[columnName]!));
         }
-        catch (Exception ex) { Error("Copy records", ex); }
+        return cells.DistinctBy(cell => (cell.Row, cell.Column))
+            .OrderBy(cell => cell.RowIndex)
+            .ThenBy(cell => cell.ColumnIndex)
+            .ToArray();
     }
 
-    private void PasteRecords_Click(object sender, RoutedEventArgs e)
+    private bool CommitGridEdit()
     {
-        if (_table is null) return;
-        try
+        if (!RecordsGrid.CommitEdit(DataGridEditingUnit.Cell, true) ||
+            !RecordsGrid.CommitEdit(DataGridEditingUnit.Row, true))
         {
-            RecordsGrid.CommitEdit(DataGridEditingUnit.Cell, true);
-            RecordsGrid.CommitEdit(DataGridEditingUnit.Row, true);
-            var ids = _session!.ReadPasteIdentityCatalog(_table);
-            var result = RecordClipboard.Paste(_table, ids, false);
-            Status($"Pasted {result.Added:N0} new records. Generated {result.GeneratedIds:N0} new IDs and " +
-                $"{result.GeneratedNames:N0} new Recordname values. Review rows, then Save Changes.");
-            UpdateActionStates();
+            Status("Complete the active cell edit before using clipboard commands.");
+            return false;
         }
-        catch (Exception ex) { Error("Paste records", ex); }
+        return true;
     }
 
-    private void DuplicateRecords_Click(object sender, RoutedEventArgs e)
+    private void CopyCells_Click(object sender, RoutedEventArgs e)
     {
-        if (_table is null) return;
+        if (_table is null || !CommitGridEdit()) return;
         try
         {
-            RecordsGrid.CommitEdit(DataGridEditingUnit.Cell, true);
-            RecordsGrid.CommitEdit(DataGridEditingUnit.Row, true);
-            var selected = SelectedRows(sender);
-            var ids = _session!.ReadPasteIdentityCatalog(_table);
-            var result = RecordClipboard.Paste(_table, ids, true, selected);
-            Status($"Duplicated {result.Added:N0} records. Generated {result.GeneratedIds:N0} IDs and " +
-                $"{result.GeneratedNames:N0} Recordname values. Save Changes to commit.");
+            var cells = SelectedCells(sender);
+            string text = GridCellEditor.CopyValues(cells.Select(c =>
+                new GridCellEditor.CellValue(c.RowIndex, c.ColumnIndex, c.Row[c.Column])).ToArray());
+            Clipboard.SetText(text);
+            Status($"Copied {cells.Count:N0} selected cells (Ctrl+C). No records were duplicated.");
+        }
+        catch (Exception ex) { Error("Copy cells", ex); }
+    }
+
+    private static void CheckRectangular(IReadOnlyList<SelectedGridCell> cells)
+    {
+        var rows = cells.Select(c => c.RowIndex).Distinct().Order().ToArray();
+        var columns = cells.Select(c => c.ColumnIndex).Distinct().Order().ToArray();
+        if (cells.Count != (long)rows.Length * columns.Length ||
+            rows[^1] - rows[0] + 1 != rows.Length ||
+            columns[^1] - columns[0] + 1 != columns.Length)
+            throw new InvalidOperationException(
+                "Choose a continuous rectangular destination selection for pasting multiple cells.");
+    }
+
+    private IReadOnlyList<GridCellEditor.CellPatch> CreatePatches(
+        IReadOnlyList<SelectedGridCell> selected, string[][] values)
+    {
+        if (_table is null || selected.Count == 0)
+            throw new InvalidOperationException("Select destination cells before pasting.");
+        if (values.Length == 0 || values[0].Length == 0)
+            throw new InvalidOperationException("Clipboard has no tabular text to paste.");
+
+        // A single copied cell repeated into every selected destination cell
+        // is the primary fill workflow, including disjoint cell selections.
+        if (values.Length == 1 && values[0].Length == 1)
+            return selected.Select(c => new GridCellEditor.CellPatch(c.Row, c.Column, values[0][0])).ToArray();
+
+        CheckRectangular(selected);
+        var rowIndexes = selected.Select(c => c.RowIndex).Distinct().Order().ToArray();
+        var colIndexes = selected.Select(c => c.ColumnIndex).Distinct().Order().ToArray();
+        int targetRows = rowIndexes.Length;
+        int targetCols = colIndexes.Length;
+
+        // With one destination cell, extend the pasted rectangle from that
+        // cell, but never create additional rows or cross the visible page.
+        if (selected.Count == 1)
+        {
+            var view = _table.DefaultView;
+            var displayColumns = RecordsGrid.Columns.OrderBy(c => c.DisplayIndex).ToArray();
+            var anchor = selected[0];
+            if (anchor.RowIndex + values.Length > view.Count ||
+                anchor.ColumnIndex + values[0].Length > displayColumns.Length)
+                throw new InvalidOperationException(
+                    "The pasted block exceeds the loaded rows or columns. Choose All records or select a smaller block.");
+
+            var patches = new List<GridCellEditor.CellPatch>();
+            for (int r = 0; r < values.Length; r++)
+                for (int c = 0; c < values[0].Length; c++)
+                {
+                    string columnName = Convert.ToString(displayColumns[anchor.ColumnIndex + c].Header) ?? "";
+                    if (!_table.Columns.Contains(columnName))
+                        throw new InvalidOperationException("Destination column was not found.");
+                    patches.Add(new GridCellEditor.CellPatch(view[anchor.RowIndex + r].Row,
+                        _table.Columns[columnName]!, values[r][c]));
+                }
+            return patches;
+        }
+
+        // A selected rectangle can be filled by a repeating smaller block,
+        // exactly as a spreadsheet tiles clipboard values into selected cells.
+        if (targetRows % values.Length != 0 || targetCols % values[0].Length != 0)
+            throw new InvalidOperationException(
+                "The copied block does not fit the selected cells. Select a matching range or a single starting cell.");
+
+        var rowMap = rowIndexes.Select((n, i) => (n, i)).ToDictionary(p => p.n, p => p.i);
+        var colMap = colIndexes.Select((n, i) => (n, i)).ToDictionary(p => p.n, p => p.i);
+        return selected.Select(cell =>
+            new GridCellEditor.CellPatch(cell.Row, cell.Column,
+                values[rowMap[cell.RowIndex] % values.Length]
+                      [colMap[cell.ColumnIndex] % values[0].Length])).ToArray();
+    }
+
+    private void ApplyCellPatches(IReadOnlyList<GridCellEditor.CellPatch> patches, string action)
+    {
+        if (patches.Count > 1000 &&
+            MessageBox.Show(this,
+                $"{action} will update as many as {patches.Count:N0} existing cells.\n" +
+                "Only the selected fields will change. Continue?",
+                "Confirm bulk cell changes", MessageBoxButton.YesNo, MessageBoxImage.Question)
+            != MessageBoxResult.Yes)
+        {
+            Status("Bulk change canceled.");
+            return;
+        }
+        _applyingCellChanges = true;
+        try
+        {
+            int count = GridCellEditor.Apply(patches);
+            Status($"{action}: changed {count:N0} cells. Click Save Changes to write these values to the database.");
+        }
+        finally
+        {
+            _applyingCellChanges = false;
             UpdateActionStates();
         }
-        catch (Exception ex) { Error("Duplicate records", ex); }
+    }
+
+    private void PasteCells_Click(object sender, RoutedEventArgs e)
+    {
+        if (_table is null || !CommitGridEdit()) return;
+        try
+        {
+            if (!Clipboard.ContainsText())
+                throw new InvalidOperationException("Copy a cell or range of cells first.");
+            var selected = SelectedCells(sender);
+            var pasted = GridCellEditor.ParseValues(Clipboard.GetText());
+            var patches = CreatePatches(selected, pasted);
+            ApplyCellPatches(patches, "Paste");
+        }
+        catch (Exception ex) { Error("Paste cells", ex); }
+    }
+
+    private void FillDown_Click(object sender, RoutedEventArgs e)
+    {
+        if (_table is null || !CommitGridEdit()) return;
+        try
+        {
+            var selected = SelectedCells(sender);
+            if (selected.Count < 2)
+                throw new InvalidOperationException("Select the top cell and the cells beneath it to fill.");
+            var patches = new List<GridCellEditor.CellPatch>();
+            foreach (var group in selected.GroupBy(cell => cell.ColumnIndex))
+            {
+                var ordered = group.OrderBy(cell => cell.RowIndex).ToArray();
+                if (ordered.Length < 2) continue;
+                string value = GridCellEditor.CopyValues(new[]
+                {
+                    new GridCellEditor.CellValue(0, 0, ordered[0].Row[ordered[0].Column])
+                });
+                foreach (var cell in ordered.Skip(1))
+                    patches.Add(new GridCellEditor.CellPatch(cell.Row, cell.Column, value));
+            }
+            if (patches.Count == 0)
+                throw new InvalidOperationException("Select multiple cells within the same column to fill down.");
+            ApplyCellPatches(patches, "Fill down");
+        }
+        catch (Exception ex) { Error("Fill down", ex); }
+    }
+
+    private void ClearCells_Click(object sender, RoutedEventArgs e)
+    {
+        if (_table is null || !CommitGridEdit()) return;
+        try
+        {
+            var patches = SelectedCells(sender)
+                .Select(c => new GridCellEditor.CellPatch(c.Row, c.Column, "")).ToArray();
+            ApplyCellPatches(patches, "Clear");
+        }
+        catch (Exception ex) { Error("Clear cells", ex); }
     }
 
     private void DeleteRecords_Click(object sender, RoutedEventArgs e)
