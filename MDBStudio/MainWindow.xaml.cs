@@ -640,10 +640,10 @@ public partial class MainWindow : Window
             {
                 var ordered = group.OrderBy(cell => cell.RowIndex).ToArray();
                 if (ordered.Length < 2) continue;
-                string value = GridCellEditor.CopyValues(new[]
+                string value = GridCellEditor.ParseValues(GridCellEditor.CopyValues(new[]
                 {
                     new GridCellEditor.CellValue(0, 0, ordered[0].Row[ordered[0].Column])
-                });
+                }))[0][0];
                 foreach (var cell in ordered.Skip(1))
                     patches.Add(new GridCellEditor.CellPatch(cell.Row, cell.Column, value));
             }
