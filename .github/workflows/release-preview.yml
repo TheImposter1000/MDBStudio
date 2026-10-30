@@ -1,0 +1,81 @@
+name: Publish Windows preview release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/release-preview.yml
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Unique preview release tag (e.g. v0.1.0-preview.2)"
+        required: true
+        default: "v0.1.0-preview.1"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  preview-release:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag || 'v0.1.0-preview.1' }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore dependencies
+        run: dotnet restore MDBStudio/MDBStudio.csproj
+      - name: Compile
+        run: dotnet build MDBStudio/MDBStudio.csproj --configuration Release --no-restore
+      - name: Publish Windows x64 (self-contained)
+        shell: pwsh
+        run: |
+          dotnet publish MDBStudio/MDBStudio.csproj -c Release -r win-x64 --self-contained true -o publish
+          if ($LASTEXITCODE -ne 0) { throw "Publish failed" }
+          if (-not (Test-Path "publish/MDBStudio.exe")) { throw "MDBStudio.exe was not produced" }
+          $exe = (Resolve-Path "publish/MDBStudio.exe").Path
+          (Get-FileHash $exe -Algorithm SHA256).Hash + "  MDBStudio.exe" | Set-Content -Path "publish/SHA256.txt" -Encoding ascii
+      - name: Package and publish as unverified prerelease
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = $env:RELEASE_TAG
+          if ($tag -notmatch '^v\d+\.\d+\.\d+-preview\.\d+$') {
+            throw "Only explicit preview tags like v0.1.0-preview.1 are permitted."
+          }
+          $file = "MDBStudio-Windows-x64-$tag-UNVERIFIED.zip"
+          Compress-Archive -Path "publish\*" -DestinationPath $file -CompressionLevel Optimal -Force
+          if (-not (Test-Path $file)) { throw "Expected ZIP was not created" }
+          $lines = @(
+            "# MDB Studio $tag (unverified preview)"
+            ""
+            "**Experimental prerelease. Not security-cleared or production ready.**"
+            ""
+            "The ZIP includes the Windows x64 C# WPF application and its self-contained .NET files. Keep the ZIP contents together when extracted."
+            ""
+            "Features in this preview: opening existing MDB/ACCDB databases; browsing tables; editing rows in tables with primary keys; backups before the first save; basic read-only SQL SELECT; CSV export."
+            ""
+            "Limitations: no Access forms, reports, relationship editor or complete schema designer; no production runtime tests; no code signature; no independent antivirus clearance; 2,000-row preview limit."
+            ""
+            "**Security:** Earlier experimental Go-based executable builds were flagged by Windows Defender. This is a new C# WPF codebase, not a repackaging of those old EXEs, but a successful GitHub build does not establish that this executable is safe. Do not bypass Defender, disable antivirus, or add exclusions to run this release. Wait for verification before using it on important databases. Test only on disposable database copies."
+            ""
+            "Microsoft Access 64-bit ACE OLE DB provider may be required to open Access files."
+            ""
+            "The package contains SHA256.txt for verifying the included EXE."
+            ""
+            "Source: $env:GITHUB_REPOSITORY, commit $env:GITHUB_SHA"
+          )
+          $lines | Set-Content -Path "PREVIEW_RELEASE_NOTES.md" -Encoding utf8
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release $tag already exists. Choose a new tag rather than overwriting a published binary."
+          }
+          gh release create $tag $file --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "MDB Studio $tag | UNVERIFIED Preview" --notes-file "PREVIEW_RELEASE_NOTES.md" --prerelease
+          if ($LASTEXITCODE -ne 0) { throw "GitHub prerelease publishing failed" }
