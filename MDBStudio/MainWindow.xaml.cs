@@ -6,6 +6,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace MDBStudio;
 
@@ -20,6 +21,7 @@ public partial class MainWindow : Window
     private int _pageIndex;
     private long _totalRecords;
     private IReadOnlyList<string> _allTables = Array.Empty<string>();
+    private IReadOnlyList<DataRow>? _rightClickSelection;
 
     public MainWindow() => InitializeComponent();
 
@@ -357,11 +359,45 @@ public partial class MainWindow : Window
         }
     }
 
-    private IReadOnlyList<DataRow> SelectedRows() =>
-        RecordsGrid.SelectedItems.OfType<DataRowView>()
+    private IReadOnlyList<DataRow> SelectedRows(object? source = null)
+    {
+        // WPF may change the row selection when a context menu opens.
+        // Preserve the complete pre-click selection when the menu was
+        // opened on an already selected row.
+        if (source is MenuItem && _rightClickSelection is { Count: > 0 } context)
+        {
+            _rightClickSelection = null;
+            return context.Where(row => row.RowState != DataRowState.Deleted).ToArray();
+        }
+        _rightClickSelection = null;
+        return RecordsGrid.SelectedItems.OfType<DataRowView>()
             .Select(view => view.Row)
             .Where(row => row.RowState != DataRowState.Deleted)
             .ToArray();
+    }
+
+    private void RecordsGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _rightClickSelection = null;
+        if (e.OriginalSource is not DependencyObject element) return;
+        DependencyObject? current = element;
+        while (current is not null)
+        {
+            if (current is DataGridRow row)
+            {
+                if (row.IsSelected)
+                {
+                    _rightClickSelection = RecordsGrid.SelectedItems
+                        .OfType<DataRowView>()
+                        .Select(item => item.Row)
+                        .Where(item => item.RowState != DataRowState.Deleted)
+                        .ToArray();
+                }
+                break;
+            }
+            current = VisualTreeHelper.GetParent(current);
+        }
+    }
 
     private void RecordsSelection_Changed(object sender, SelectedCellsChangedEventArgs e) =>
         UpdateActionStates();
@@ -392,7 +428,7 @@ public partial class MainWindow : Window
         {
             RecordsGrid.CommitEdit(DataGridEditingUnit.Cell, true);
             RecordsGrid.CommitEdit(DataGridEditingUnit.Row, true);
-            var rows = SelectedRows();
+            var rows = SelectedRows(sender);
             if (rows.Count == 0) { Status("Select one or more complete rows to copy."); return; }
             if (rows.Count > 10000)
                 throw new InvalidOperationException("Copy no more than 10,000 records at once.");
@@ -409,8 +445,10 @@ public partial class MainWindow : Window
         {
             RecordsGrid.CommitEdit(DataGridEditingUnit.Cell, true);
             RecordsGrid.CommitEdit(DataGridEditingUnit.Row, true);
-            int count = RecordClipboard.Paste(_table, false);
-            Status($"Pasted {count:N0} new records. Select Save Changes to write them to the MDB database.");
+            var ids = _session!.ReadPasteIdentityCatalog(_table);
+            var result = RecordClipboard.Paste(_table, ids, false);
+            Status($"Pasted {result.Added:N0} new records. Generated {result.GeneratedIds:N0} new IDs and " +
+                $"{result.GeneratedNames:N0} new Recordname values. Review rows, then Save Changes.");
             UpdateActionStates();
         }
         catch (Exception ex) { Error("Paste records", ex); }
@@ -423,8 +461,11 @@ public partial class MainWindow : Window
         {
             RecordsGrid.CommitEdit(DataGridEditingUnit.Cell, true);
             RecordsGrid.CommitEdit(DataGridEditingUnit.Row, true);
-            int count = RecordClipboard.Paste(_table, true, SelectedRows());
-            Status($"Duplicated {count:N0} records. Save Changes to commit them.");
+            var selected = SelectedRows(sender);
+            var ids = _session!.ReadPasteIdentityCatalog(_table);
+            var result = RecordClipboard.Paste(_table, ids, true, selected);
+            Status($"Duplicated {result.Added:N0} records. Generated {result.GeneratedIds:N0} IDs and " +
+                $"{result.GeneratedNames:N0} Recordname values. Save Changes to commit.");
             UpdateActionStates();
         }
         catch (Exception ex) { Error("Duplicate records", ex); }
@@ -433,7 +474,7 @@ public partial class MainWindow : Window
     private void DeleteRecords_Click(object sender, RoutedEventArgs e)
     {
         if (_table is null || _table.PrimaryKey.Length == 0) return;
-        var rows = SelectedRows();
+        var rows = SelectedRows(sender);
         if (rows.Count == 0) return;
         if (MessageBox.Show(this,
             $"Mark {rows.Count:N0} selected records for deletion?\n\n" +
