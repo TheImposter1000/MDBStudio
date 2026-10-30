@@ -1,8 +1,8 @@
 # MDB Studio
 
-MDB Studio is an experimental Windows desktop database editor. It aims to support Access-like database management for .mdb and .accdb files. This repository contains transparent **C# / WPF** source and a Windows build workflow.
+MDB Studio is a Windows desktop database editor currently distributed through standard numbered GitHub releases. The application is actively developed and does not yet replace every Microsoft Access feature. It aims to support Access-like database management for .mdb and .accdb files. This repository contains transparent **C# / WPF** source and a Windows build workflow.
 
-## Current preview scope
+## Current features
 
 Open existing Microsoft Access files; browse all records through pages of 1,000, 5,000 or 10,000 rows, or optionally load **All records**; show the actual table record count and page numbers; edit, insert and delete records in tables with primary keys; save changes transactionally with a backup of the original file; run read-only SELECT queries without a fixed 2,000-result ceiling; export **all saved table records** to CSV. The Check updates button reads public release metadata from the official GitHub repository and, after user confirmation, can open a release in the default browser. It never downloads or executes update binaries.
 
@@ -10,9 +10,9 @@ Not yet implemented: full Access table design, relationships editing, forms, rep
 
 ## Safety and compatibility
 
-**Do not use this preview on irreplaceable data. Start with a separate database copy.** MDB Studio does not convert the original file. It uses Windows Microsoft ACE OLE DB. The matching 64-bit Microsoft 365 Access Runtime / ACE provider must be installed. The app detects ACE 16.0 and 12.0 and reports provider errors.
+**Do not use the application on irreplaceable data. Start with a separate database copy.** MDB Studio does not convert the original file. It uses Windows Microsoft ACE OLE DB. The matching 64-bit Microsoft 365 Access Runtime / ACE provider must be installed. The app detects ACE 16.0 and 12.0 and reports provider errors.
 
-The earlier experimental **Go-based** EXE distributed outside this repository was flagged by Microsoft Defender. Do not run, restore, whitelist, or redistribute those earlier EXEs. This is a fresh Windows C# implementation, not a copy of those binaries. A successful GitHub build does **not** establish that the resulting executable has passed antivirus scanning, is code-signed, or is production-safe. The GitHub artifact is explicitly labeled UNVERIFIED.
+The earlier experimental **Go-based** EXE distributed outside this repository was flagged by Microsoft Defender. Do not run, restore, whitelist, or redistribute those earlier EXEs. This is a fresh Windows C# implementation, not a copy of those binaries. A successful GitHub build does **not** establish that the resulting executable has passed antivirus scanning or is code-signed. Do not bypass Windows Defender warnings. Standard GitHub releases reflect the user's successful functional testing, not independent antivirus certification.
 
 ## New interface and clipboard records
 
@@ -34,10 +34,14 @@ If an Access MDB/ACCDB file reports "Not a valid password", MDB Studio asks for 
 
 ## Build
 
-GitHub Actions runs the Windows workflow in .github/workflows/windows-build.yml. It restores, compiles, and publishes the self-contained x64 application. The resulting build artifact is a multi-file folder (not a packed or obfuscated EXE). Keep all published files together when testing. The project targets .NET 10.
+GitHub Actions runs the Windows workflow in .github/workflows/windows-build.yml. It restores, compiles, and publishes the self-contained x64 application. The release workflow publishes normal version tags such as `v1.0.0` and `v1.0.1`. Each release is a portable ZIP containing a multi-file application folder, not an installer. Keep all published files together when testing. The project targets .NET 10.
 
 ## Roadmap
 
 Database structure/design tools, referential integrity and relationships, visual query builder, forms, reports, import tools, complex field types, performance improvements for very large record sets, automated tests and MDB/ACCDB fixtures, Windows runtime tests, security review, packaging, signed release, and updater.
 
 The project is not affiliated with Microsoft.
+
+## Versioning
+
+The repository uses normal GitHub releases for versions such as `v1.0.0`, `v1.0.1` and `v1.1.0`. Before publishing, update `MDBStudio.csproj` and `UpdateChecker.CurrentReleaseTag` to exactly the same version, then run the release workflow. Previews are optional and are not the default distribution channel. The **Check updates** button opens the official release page; it does not automatically install anything.
