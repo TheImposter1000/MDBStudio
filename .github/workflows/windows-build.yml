@@ -1,0 +1,40 @@
+name: Windows preview build
+
+on:
+  push:
+    branches: [main, feature/windows-wpf-foundation]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@v4
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore MDBStudio/MDBStudio.csproj
+      - name: Compile
+        run: dotnet build MDBStudio/MDBStudio.csproj --configuration Release --no-restore
+      - name: Publish Windows x64 application
+        shell: pwsh
+        run: |
+          dotnet publish MDBStudio/MDBStudio.csproj -c Release -r win-x64 --self-contained true -o publish
+          if ($LASTEXITCODE -ne 0) { throw "Publishing failed" }
+          if (-not (Test-Path "publish/MDBStudio.exe")) { throw "Expected EXE was not generated" }
+          Get-FileHash "publish/MDBStudio.exe" -Algorithm SHA256 | Format-List | Out-File "publish/SHA256.txt"
+      - name: Upload build artifact for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: MDBStudio-Windows-x64-UNVERIFIED
+          path: publish/
+          if-no-files-found: error
+          retention-days: 7
