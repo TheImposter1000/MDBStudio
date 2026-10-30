@@ -10,7 +10,7 @@ on:
       tag:
         description: "Unique preview release tag (e.g. v0.1.0-preview.2)"
         required: true
-        default: "v0.1.0-preview.1"
+        default: "v0.1.1-preview.1"
         type: string
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 25
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ inputs.tag || 'v0.1.0-preview.1' }}
+      RELEASE_TAG: ${{ inputs.tag || 'v0.1.1-preview.1' }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -48,7 +48,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $tag = $env:RELEASE_TAG
           if ($tag -notmatch '^v\d+\.\d+\.\d+-preview\.\d+$') {
-            throw "Only explicit preview tags like v0.1.0-preview.1 are permitted."
+            throw "Only explicit preview tags like v0.1.1-preview.1 are permitted."
           }
           $file = "MDBStudio-Windows-x64-$tag-UNVERIFIED.zip"
           Compress-Archive -Path "publish\*" -DestinationPath $file -CompressionLevel Optimal -Force
@@ -60,13 +60,13 @@ jobs:
             ""
             "The ZIP includes the Windows x64 C# WPF application and its self-contained .NET files. Keep the ZIP contents together when extracted."
             ""
-            "Features in this preview: opening existing MDB/ACCDB databases; browsing tables; editing rows in tables with primary keys; backups before the first save; basic read-only SQL SELECT; CSV export."
+            "Features in this preview: opening existing MDB/ACCDB databases, including password-protected files when the user knows the password; browsing tables; editing rows in tables with primary keys; backups before the first save; basic read-only SQL SELECT; CSV export."
             ""
             "Limitations: no Access forms, reports, relationship editor or complete schema designer; no production runtime tests; no code signature; no independent antivirus clearance; 2,000-row preview limit."
             ""
             "**Security:** Earlier experimental Go-based executable builds were flagged by Windows Defender. This is a new C# WPF codebase, not a repackaging of those old EXEs, but a successful GitHub build does not establish that this executable is safe. Do not bypass Defender, disable antivirus, or add exclusions to run this release. Wait for verification before using it on important databases. Test only on disposable database copies."
             ""
-            "Microsoft Access 64-bit ACE OLE DB provider may be required to open Access files."
+            "Microsoft Access 64-bit ACE OLE DB provider may be required to open Access files. Password support does not unlock unknown or proprietary game database passwords."
             ""
             "The package contains SHA256.txt for verifying the included EXE."
             ""

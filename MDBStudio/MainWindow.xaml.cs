@@ -44,7 +44,25 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) != true) return;
         try
         {
-            var next = new AccessSession(dialog.FileName);
+            AccessSession next;
+            try
+            {
+                next = new AccessSession(dialog.FileName);
+            }
+            catch (DatabasePasswordRequiredException)
+            {
+                var prompt = new DatabasePasswordDialog(Path.GetFileName(dialog.FileName))
+                {
+                    Owner = this
+                };
+                if (prompt.ShowDialog() != true)
+                {
+                    Status("Database opening cancelled.");
+                    return;
+                }
+                // The password stays in this process and is never saved in settings or logs.
+                next = new AccessSession(dialog.FileName, prompt.EnteredPassword);
+            }
             var names = next.ListTables();
             _session = next;
             _table = null;

@@ -14,6 +14,12 @@ Not yet implemented: full Access table design, relationships editing, forms, rep
 
 The earlier experimental **Go-based** EXE distributed outside this repository was flagged by Microsoft Defender. Do not run, restore, whitelist, or redistribute those earlier EXEs. This is a fresh Windows C# implementation, not a copy of those binaries. A successful GitHub build does **not** establish that the resulting executable has passed antivirus scanning, is code-signed, or is production-safe. The GitHub artifact is explicitly labeled UNVERIFIED.
 
+## Password-protected databases
+
+If an Access MDB/ACCDB file reports "Not a valid password", MDB Studio asks for a database password that you already know. It passes the password to the Microsoft ACE provider using `Jet OLEDB:Database Password` and does not write it to a file or application logs. This feature does not remove, crack, discover, or bypass unknown passwords. Unsupported or damaged database formats can also give authentication-like errors.
+
+**TEW IX:** The game protects its working `TEW9.mdb` and `TEW9Save.mdb` files and does not publish their database password. Use the game's **External Editor** function to produce an editable, password-free MDB intended for editing and subsequent in-game import. The game's **Create MDB File** option is for external viewing only and cannot be imported as a playable database. Do not attempt direct writes to protected game databases. See the TEW IX Player's Handbook and Grey Dog Software developer notes.
+
 ## Build
 
 GitHub Actions runs the Windows workflow in .github/workflows/windows-build.yml. It restores, compiles, and publishes the self-contained x64 application. The resulting build artifact is a multi-file folder (not a packed or obfuscated EXE). Keep all published files together when testing. The project targets .NET 10.
