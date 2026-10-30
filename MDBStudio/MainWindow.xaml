@@ -108,7 +108,7 @@
         </StackPanel>
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
           <Border Background="#ECF6FE" CornerRadius="6" Padding="10,7" Margin="4,0">
-            <TextBlock Text="Windows preview" FontSize="11" Foreground="#2467A8"/>
+            <TextBlock Text="MDB Studio v1.0.1" FontSize="11" Foreground="#2467A8"/>
           </Border>
           <Button x:Name="CheckUpdatesButton" Style="{StaticResource ToolButton}" Click="CheckUpdates_Click" Content="Check updates"/>
         </StackPanel>
@@ -138,7 +138,7 @@
           <Button x:Name="PasteButton" Style="{StaticResource ToolButton}" Click="PasteRecords_Click" IsEnabled="False" ToolTip="Paste rows from MDB Studio or a spreadsheet (Ctrl+V)">
             <StackPanel><TextBlock Text="▥" FontSize="21" TextAlignment="Center"/><TextBlock Text="Paste records" FontSize="11"/></StackPanel>
           </Button>
-          <Button x:Name="DuplicateButton" Style="{StaticResource ToolButton}" Click="DuplicateRecords_Click" IsEnabled="False" ToolTip="Duplicate selected rows when the primary key is AutoNumber">
+          <Button x:Name="DuplicateButton" Style="{StaticResource ToolButton}" Click="DuplicateRecords_Click" IsEnabled="False" ToolTip="Duplicate selected rows with new IDs and numbered Recordname values">
             <StackPanel><TextBlock Text="▧" FontSize="21" TextAlignment="Center"/><TextBlock Text="Duplicate" FontSize="11"/></StackPanel>
           </Button>
           <Button x:Name="DeleteButton" Style="{StaticResource ToolButton}" Click="DeleteRecords_Click" IsEnabled="False">
@@ -212,6 +212,7 @@
               <DataGrid x:Name="RecordsGrid" AutoGenerateColumns="True" CanUserAddRows="False"
                         CanUserDeleteRows="False" IsReadOnly="True" SelectionUnit="FullRow" SelectionMode="Extended"
                         SelectedCellsChanged="RecordsSelection_Changed" PreviewKeyDown="RecordsGrid_PreviewKeyDown"
+                        PreviewMouseRightButtonDown="RecordsGrid_PreviewMouseRightButtonDown"
                         Background="White" FontSize="12">
                 <DataGrid.ContextMenu>
                   <ContextMenu>
@@ -228,7 +229,7 @@
           <TabItem Header="SQL Query">
             <Grid Margin="12">
               <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="135"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-              <TextBlock Text="Read-only SELECT queries. Action queries remain disabled in this preview."
+              <TextBlock Text="Read-only SELECT queries. Action queries are disabled."
                          Foreground="#7186A3" Margin="0,0,0,12"/>
               <TextBox x:Name="SqlInput" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap"
                        VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12"/>
