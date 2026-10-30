@@ -299,45 +299,80 @@ public partial class MainWindow : Window
     private async void CheckUpdates_Click(object sender, RoutedEventArgs e)
     {
         CheckUpdatesButton.IsEnabled = false;
-        Status("Checking the official MDB Studio GitHub releases...");
+        Status("Checking for MDB Studio updates on the official GitHub repository...");
+        bool installerStarted = false;
         try
         {
-            UpdateResult result = await UpdateChecker.CheckAsync();
+            var result = await UpdateChecker.CheckAsync();
             if (!result.UpdateAvailable)
             {
-                Status($"MDB Studio {result.CurrentTag} is current; latest release is {result.LatestTag}.");
-                MessageBox.Show($"You're using {result.CurrentTag}. The newest published release is {result.LatestTag}.",
+                Status($"MDB Studio {result.CurrentTag} is up to date.");
+                MessageBox.Show(this, $"You're using {result.CurrentTag}. This is the latest release.",
                     "MDB Studio updates", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
-
-            Status($"Update found: {result.LatestTag}. Open GitHub to review the release.");
-            var answer = MessageBox.Show(
-                $"An update is available.\n\nCurrent: {result.CurrentTag}\nLatest: {result.LatestTag}\n\n" +
-                "The release may be an unverified preview. Always respect Windows Defender warnings. " +
-                "MDB Studio will not download, install, or execute updates automatically.\n\n" +
-                "Open the official GitHub release page in your browser?",
-                "MDB Studio update available",
-                MessageBoxButton.YesNo, MessageBoxImage.Information);
-            if (answer == MessageBoxResult.Yes)
+            if (result.ZipUrl is null || result.ChecksumUrl is null)
             {
-                Process.Start(new ProcessStartInfo(result.LatestUrl.AbsoluteUri)
-                {
-                    UseShellExecute = true
-                });
+                throw new InvalidOperationException(
+                    "This release is missing an official verified ZIP or checksum. " +
+                    "The application will not install an unverified package.");
             }
+
+            var proceed = MessageBox.Show(this,
+                $"MDB Studio {result.LatestTag} is available.\n\nInstalled: {result.CurrentTag}\n" +
+                $"Available: {result.LatestTag}\n\n" +
+                "Install this update directly into your current MDB Studio folder? " +
+                "The application will close, update its own files, and reopen automatically. " +
+                "Your MDB database files are not part of the update.\n\n" +
+                "Do not bypass Windows Defender warnings.",
+                "Install MDB Studio update", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (proceed != MessageBoxResult.Yes)
+            {
+                Status("Update canceled.");
+                return;
+            }
+
+            if (!RecordsGrid.CommitEdit(DataGridEditingUnit.Cell, true) ||
+                !RecordsGrid.CommitEdit(DataGridEditingUnit.Row, true))
+                throw new InvalidOperationException("Finish editing the active record before updating.");
+            if (_table?.GetChanges() is not null)
+            {
+                MessageBox.Show(this,
+                    "You have unsaved database changes. Save your records first, then check for updates again. " +
+                    "MDB Studio will not discard pending edits during an update.",
+                    "Save changes before updating", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            Status($"Downloading and verifying {result.LatestTag}. No files are being replaced yet...");
+            var staged = await UpdateChecker.DownloadAndVerifyAsync(result);
+            var launch = new ProcessStartInfo(staged.UpdaterPath)
+            {
+                WorkingDirectory = staged.WorkDirectory,
+                UseShellExecute = false
+            };
+            launch.ArgumentList.Add("--apply");
+            launch.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            launch.ArgumentList.Add(Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory));
+            launch.ArgumentList.Add(staged.ArchivePath);
+            launch.ArgumentList.Add(staged.Sha256);
+
+            if (Process.Start(launch) is null)
+                throw new InvalidOperationException("Unable to start the update installer.");
+            installerStarted = true;
+            Status("Verified update downloaded. Closing to install, then relaunching MDB Studio...");
+            Close();
         }
         catch (Exception ex)
         {
-            Status("Unable to check for updates. Check your internet connection.");
-            Error("Update check failed", ex);
+            Status("Update could not be installed; existing files were not intentionally changed.");
+            Error("MDB Studio update failed", ex);
         }
         finally
         {
-            CheckUpdatesButton.IsEnabled = true;
+            if (!installerStarted) CheckUpdatesButton.IsEnabled = true;
         }
     }
-
 
     private void UpdateActionStates()
     {
