@@ -6,6 +6,16 @@ using System.Text.RegularExpressions;
 
 namespace MDBStudio;
 
+public sealed class DatabasePasswordRequiredException : InvalidOperationException
+{
+    public DatabasePasswordRequiredException(bool suppliedPassword)
+        : base(suppliedPassword
+            ? "The supplied database password was not accepted, or this file uses a format that Microsoft ACE cannot read."
+            : "This database may require a password. Enter a password only if you already know it. Some unsupported or damaged files may produce the same error.")
+    {
+    }
+}
+
 /// <summary>
 /// Local ACE OLE DB access. Identifiers are validated, record values are parameterized,
 /// and writes require a primary key and a backup of the original database.
@@ -13,12 +23,14 @@ namespace MDBStudio;
 public sealed class AccessSession
 {
     private readonly string _provider;
+    private readonly string? _databasePassword;
     private bool _hasBackup;
     public const int PreviewRowLimit = 2000;
     public string FilePath { get; }
 
-    public AccessSession(string path)
+    public AccessSession(string path, string? databasePassword = null)
     {
+        _databasePassword = databasePassword;
         FilePath = Path.GetFullPath(path);
         if (!File.Exists(FilePath))
             throw new FileNotFoundException("Database file not found.", FilePath);
@@ -29,6 +41,7 @@ public sealed class AccessSession
             throw new InvalidOperationException("Choose an MDB or ACCDB file.");
 
         var errors = new List<string>();
+        bool passwordRejected = false;
         foreach (var provider in new[] { "Microsoft.ACE.OLEDB.16.0", "Microsoft.ACE.OLEDB.12.0" })
         {
             try
@@ -40,9 +53,14 @@ public sealed class AccessSession
             }
             catch (Exception ex) when (ex is OleDbException or InvalidOperationException)
             {
+                if (ex.Message.Contains("Not a valid password", StringComparison.OrdinalIgnoreCase))
+                    passwordRejected = true;
                 errors.Add(provider + ": " + ex.Message);
             }
         }
+        if (passwordRejected)
+            throw new DatabasePasswordRequiredException(!string.IsNullOrEmpty(databasePassword));
+
         throw new InvalidOperationException(
             "Could not open the database with either 64-bit Microsoft ACE OLE DB provider.\n" +
             "Check that the file exists, is an Access database, and is not open exclusively.\n\n" +
@@ -57,6 +75,8 @@ public sealed class AccessSession
             DataSource = FilePath,
             PersistSecurityInfo = false
         };
+        if (!string.IsNullOrEmpty(_databasePassword))
+            builder["Jet OLEDB:Database Password"] = _databasePassword;
         return new OleDbConnection(builder.ConnectionString);
     }
 
