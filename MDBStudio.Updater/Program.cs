@@ -34,7 +34,7 @@ internal static class Program
 
             WaitForExit(processId);
             Apply(target, archive, expected);
-            Process.Start(new ProcessStartInfo(Path.Combine(target, "MDBStudio.exe"))
+            _ = Process.Start(new ProcessStartInfo(Path.Combine(target, "MDBStudio.exe"))
             {
                 UseShellExecute = true,
                 WorkingDirectory = target
