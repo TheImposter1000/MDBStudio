@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Unique stable version tag (for example v1.0.3)"
+        description: "Unique stable version tag (for example v1.0.4)"
         required: true
-        default: "v1.0.3"
+        default: "v1.0.4"
         type: string
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ inputs.tag || 'v1.0.3' }}
+      RELEASE_TAG: ${{ inputs.tag || 'v1.0.4' }}
     steps:
       - name: Check out reviewed source
         uses: actions/checkout@v4
@@ -35,7 +35,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
-            throw "Normal releases require semantic version tags such as v1.0.3."
+            throw "Normal releases require semantic version tags such as v1.0.4."
           }
           [xml] $project = Get-Content "MDBStudio/MDBStudio.csproj"
           $projectVersion = [string]$project.Project.PropertyGroup.Version
@@ -80,9 +80,9 @@ jobs:
             ""
             "Standard Windows release, published from the C# and WPF source in this repository."
             ""
-            "Includes the redesigned MDB Studio interface and app icon, MDB/ACCDB database browsing, large-table navigation, cell-by-cell copy/paste, repeating a single value across selected cells, Ctrl+D Fill Down, and explicit row deletion, read-only SQL, backups, full-table CSV export and Check updates."
+            "Includes the redesigned MDB Studio interface and app icon, MDB/ACCDB database browsing, large-table navigation, cell-by-cell copy/paste, Ctrl+D Fill Down, and restored record deletion from selected cells or row headers, read-only SQL, backups, full-table CSV export and Check updates."
             ""
-            "The ZIP includes the app and a separate self-contained updater. Extract v1.0.3 once, then future updates install directly via Check & install updates."
+            "The ZIP includes the app and a separate self-contained updater. Extract v1.0.4 once, then future updates install directly via Check & install updates."
             ""
             "Windows runtime and antivirus certification have not been independently completed. This executable is not code-signed. Earlier unrelated experimental Go executables were flagged by Defender; never disable antivirus protection or override a threat warning to run MDB Studio."
             ""

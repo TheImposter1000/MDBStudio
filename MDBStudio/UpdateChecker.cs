@@ -13,7 +13,7 @@ namespace MDBStudio;
 /// </summary>
 public static class UpdateChecker
 {
-    public const string CurrentReleaseTag = "v1.0.3";
+    public const string CurrentReleaseTag = "v1.0.4";
     private const string Repository = "TheImposter1000/MDBStudio";
     private static readonly Uri ApiUrl =
         new("https://api.github.com/repos/" + Repository + "/releases?per_page=100");
@@ -21,7 +21,7 @@ public static class UpdateChecker
     private static HttpClient Client()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromMinutes(8) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("MDBStudio/1.0.3");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("MDBStudio/1.0.4");
         client.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         return client;

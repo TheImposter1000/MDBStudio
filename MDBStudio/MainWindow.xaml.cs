@@ -384,8 +384,11 @@ public partial class MainWindow : Window
         CopyButton.IsEnabled = open && cellCount > 0;
         PasteButton.IsEnabled = writable && cellCount > 0;
         FillDownButton.IsEnabled = writable && cellCount > 1;
+        // Cell selection is the default in v1.0.3, so deleting records must
+        // also be available when the user selects cells rather than row headers.
         DeleteButton.IsEnabled = writable &&
-            RecordsGrid.SelectedItems.OfType<DataRowView>().Any();
+            (RecordsGrid.SelectedItems.OfType<DataRowView>().Any() ||
+             RecordsGrid.SelectedCells.Any(cell => cell.Item is DataRowView));
         if (open)
         {
             int dirty = _table!.Rows.Cast<DataRow>()
@@ -398,16 +401,25 @@ public partial class MainWindow : Window
 
     private IReadOnlyList<DataRow> SelectedRows(object? source = null)
     {
-        if (source is MenuItem && _rightClickSelection is { Count: > 0 } context)
+        // Row-header selections take priority; otherwise collect the rows
+        // belonging to selected cells. Multiple cells in one row count once.
+        // Right-clicking a selected cell retains the original selection.
+        var fromContext = source is MenuItem;
+        var rows = fromContext && _rightClickSelection is { Count: > 0 } context
+            ? context
+            : RecordsGrid.SelectedItems.OfType<DataRowView>()
+                .Select(view => view.Row).ToArray();
+        if (rows.Count == 0)
         {
-            _rightClickSelection = null;
-            return context.Where(row => row.RowState != DataRowState.Deleted).ToArray();
+            var cells = fromContext && _rightClickCells is { Count: > 0 }
+                ? _rightClickCells
+                : RecordsGrid.SelectedCells.ToArray();
+            rows = cells.Where(cell => cell.Item is DataRowView)
+                .Select(cell => ((DataRowView)cell.Item).Row).ToArray();
         }
         _rightClickSelection = null;
-        return RecordsGrid.SelectedItems.OfType<DataRowView>()
-            .Select(view => view.Row)
-            .Where(row => row.RowState != DataRowState.Deleted)
-            .ToArray();
+        _rightClickCells = null;
+        return RecordDeletion.EligibleRows(rows);
     }
 
     private void RecordsGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
@@ -450,9 +462,20 @@ public partial class MainWindow : Window
             FillDown_Click(sender, e);
             e.Handled = true;
         }
+        else if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 && e.Key == Key.Delete)
+        {
+            // Ctrl+Delete explicitly deletes records even when cells are selected.
+            DeleteRecords_Click(sender, e);
+            e.Handled = true;
+        }
         else if (Keyboard.Modifiers == ModifierKeys.None && e.Key == Key.Delete)
         {
-            ClearCells_Click(sender, e);
+            // Delete on selected row headers removes records. With ordinary
+            // cell selection it continues to clear just those cell values.
+            if (RecordsGrid.SelectedItems.OfType<DataRowView>().Any())
+                DeleteRecords_Click(sender, e);
+            else
+                ClearCells_Click(sender, e);
             e.Handled = true;
         }
     }
@@ -669,20 +692,33 @@ public partial class MainWindow : Window
     private void DeleteRecords_Click(object sender, RoutedEventArgs e)
     {
         if (_table is null || _table.PrimaryKey.Length == 0) return;
-        var rows = SelectedRows(sender);
-        if (rows.Count == 0) return;
-        if (MessageBox.Show(this,
-            $"Mark {rows.Count:N0} selected records for deletion?\n\n" +
-            "Nothing is removed from the MDB file until you click Save Changes.",
-            "Delete records", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
-            return;
-        foreach (var row in rows)
+        if (!CommitGridEdit()) return;
+        try
         {
-            if (row.RowState == DataRowState.Added) _table.Rows.Remove(row);
-            else row.Delete();
+            var rows = SelectedRows(sender);
+            if (rows.Count == 0)
+            {
+                Status("Select any cell in the records to delete, or select their row headers.");
+                return;
+            }
+            if (MessageBox.Show(this,
+                $"Delete {rows.Count:N0} selected record(s)?\n\n" +
+                "Only the selected records will be removed. This action remains pending " +
+                "until you click Save Changes, and MDB Studio backs up the file before saving.",
+                "Confirm record deletion",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                MessageBoxResult.No) != MessageBoxResult.Yes)
+            {
+                Status("Record deletion canceled.");
+                return;
+            }
+
+            int count = RecordDeletion.Stage(_table, rows);
+            RecordsGrid.SelectedCells.Clear();
+            Status($"{count:N0} records marked for deletion. Select Save Changes to commit.");
+            UpdateActionStates();
         }
-        Status($"{rows.Count:N0} records marked for deletion. Save Changes to apply.");
-        UpdateActionStates();
+        catch (Exception ex) { Error("Delete records", ex); }
     }
 
     private void TableSearch_TextChanged(object sender, TextChangedEventArgs e)

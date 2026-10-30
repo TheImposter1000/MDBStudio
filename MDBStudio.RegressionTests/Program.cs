@@ -14,6 +14,9 @@ internal static class Program
         TestMultiColumnPaste();
         TestProtectedKeysAndInvalidValues();
         TestTextClipboardRoundtrip();
+        TestDeleteSelectedRecords();
+        TestDeletePendingInsertedRecord();
+        TestDeleteRequiresPrimaryKey();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -172,6 +175,53 @@ internal static class Program
         var parsed = GridCellEditor.ParseValues(text);
         Check(parsed.Length == 1 && parsed[0].Length == 1 && parsed[0][0] == value,
             "Copied text must roundtrip, even with embedded quotes, tabs and new lines.");
+    }
+
+    private static void TestDeleteSelectedRecords()
+    {
+        var table = Example();
+        var first = table.Rows[0];
+        var second = table.Rows[1];
+        // Highlighting more than one cell in a row must not delete it twice.
+        var selected = RecordDeletion.EligibleRows(new[] { first, first, second, second });
+        Check(selected.Count == 2, "Selected cells must resolve to distinct records.");
+        Check(table.Rows.Cast<DataRow>().All(r => r.RowState == DataRowState.Unchanged),
+            "Selecting cells must not change the database.");
+        Check(RecordDeletion.Stage(table, new[] { first, first }) == 1,
+            "Exactly one selected record must be staged for deletion.");
+        Check(first.RowState == DataRowState.Deleted, "Selected record must be marked deleted.");
+        Check(second.RowState == DataRowState.Unchanged, "Unselected record must be untouched.");
+        Check((int)second["BeltOrder"] == 14, "Delete must not clear or alter unrelated data.");
+        Check(table.GetChanges(DataRowState.Deleted)?.Rows.Count == 1,
+            "Deletion must remain pending until Save Changes.");
+    }
+
+    private static void TestDeletePendingInsertedRecord()
+    {
+        var table = Example();
+        var existing = table.Rows[0];
+        var newRow = table.Rows.Add(15, "Prairie Cup015", 0, 15);
+        Check(newRow.RowState == DataRowState.Added, "New record should be pending.");
+        Check(RecordDeletion.Stage(table, new[] { newRow }) == 1,
+            "Pending new record must be removable.");
+        Check(newRow.RowState == DataRowState.Detached,
+            "Uncommitted insertion must be removed from the local table.");
+        Check(existing.RowState == DataRowState.Unchanged,
+            "Deleting newly added record must preserve saved records.");
+    }
+
+    private static void TestDeleteRequiresPrimaryKey()
+    {
+        var table = Example();
+        table.PrimaryKey = Array.Empty<DataColumn>();
+        try
+        {
+            RecordDeletion.Stage(table, new[] { table.Rows[0] });
+            throw new Exception("Expected delete without a primary key to be rejected.");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("primary key")) { }
+        Check(table.Rows[0].RowState == DataRowState.Unchanged,
+            "Unsupported deletion must leave all records unchanged.");
     }
 
     private static void Check(bool condition, string failure)
