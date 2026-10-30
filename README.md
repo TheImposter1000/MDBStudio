@@ -44,7 +44,7 @@ The project is not affiliated with Microsoft.
 
 ## Versioning
 
-The repository uses normal GitHub releases for versions such as `v1.0.0`, `v1.0.1` and `v1.1.0`. Before publishing, update `MDBStudio.csproj` and `UpdateChecker.CurrentReleaseTag` to exactly the same version, then run the release workflow. Previews are optional and are not the default distribution channel. The **Check updates** button opens the official release page; it does not automatically install anything.
+The repository uses normal GitHub releases for versions such as `v1.0.0`, `v1.0.1` and `v1.1.0`. Before publishing, update `MDBStudio.csproj` and `UpdateChecker.CurrentReleaseTag` to exactly the same version, then run the release workflow. Previews are optional and are not the default distribution channel. The **Check & install updates** button offers a confirmed, verified in-place installation of newer releases.
 
 ## Paste and duplicate improvements (v1.0.1)
 
@@ -53,3 +53,9 @@ Copying complete selected rows and pasting them into the same table now creates 
 If a table has a text `Recordname` column, existing names such as `Prairie Cup013` are advanced to the next available name (for example `Prairie Cup024`) while retaining their prefix and padding width. The other record fields are copied unchanged and should be reviewed. This does **not** automatically modify `BeltOrder` or other domain-specific sequence fields. Pasting into a table with composite keys or unsupported identity types that cannot be safely regenerated still requires manual IDs, and database unique indexes are checked by Access on save. The right-click context menu retains a previously selected group of rows. Copied and pasted rows remain pending until **Save Changes**, which creates a backup before writing.
 
 This release uses the standard GitHub version format, not a preview.
+
+## In-app updates (v1.0.2)
+
+The Check & install updates button downloads new releases directly from the official GitHub repository. The app validates a published SHA256 manifest, refuses to discard unsaved database edits, and launches an independent updater from a temporary folder. The updater waits for MDB Studio to close, verifies integrity again, extracts the release, backs up the program files it replaces, installs the update, and relaunches the application. If installation fails, it attempts to restore the previous version. No MDB/ACCDB database files or user-created files are part of the release archive. No antivirus exceptions or elevation bypasses are made.
+
+One-time setup: MDB Studio v1.0.1 and earlier do not contain the updater. You will need to extract v1.0.2 once into your existing writable program folder. Every subsequent release containing the updater can be installed directly from the application's button without manually downloading a ZIP. The application is not code-signed or independently antivirus certified. Do not bypass Windows Defender warnings.
