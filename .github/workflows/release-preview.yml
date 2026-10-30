@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Unique stable version tag (for example v1.0.1)"
+        description: "Unique stable version tag (for example v1.0.2)"
         required: true
-        default: "v1.0.1"
+        default: "v1.0.2"
         type: string
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ inputs.tag || 'v1.0.1' }}
+      RELEASE_TAG: ${{ inputs.tag || 'v1.0.2' }}
     steps:
       - name: Check out reviewed source
         uses: actions/checkout@v4
@@ -35,7 +35,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
-            throw "Normal releases require semantic version tags such as v1.0.1."
+            throw "Normal releases require semantic version tags such as v1.0.2."
           }
           [xml] $project = Get-Content "MDBStudio/MDBStudio.csproj"
           $projectVersion = [string]$project.Project.PropertyGroup.Version
@@ -52,12 +52,18 @@ jobs:
         run: dotnet build MDBStudio/MDBStudio.csproj --configuration Release --no-restore
       - name: Test duplicate and paste identity generation
         run: dotnet run --project MDBStudio.RegressionTests/MDBStudio.RegressionTests.csproj -c Release
+      - name: Test updater checksum and rollback
+        run: dotnet run --project MDBStudio.Updater/MDBStudio.Updater.csproj -c Release -- --self-test
       - name: Publish Windows x64
         shell: pwsh
         run: |
           dotnet publish MDBStudio/MDBStudio.csproj -c Release -r win-x64 --self-contained true -o publish
           if ($LASTEXITCODE -ne 0) { throw "Publish failed." }
           if (-not (Test-Path "publish/MDBStudio.exe")) { throw "MDBStudio.exe missing." }
+          dotnet publish MDBStudio.Updater/MDBStudio.Updater.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o updater-publish
+          if ($LASTEXITCODE -ne 0) { throw "Updater publish failed." }
+          Copy-Item "updater-publish/MDBStudio.Updater.exe" "publish/MDBStudio.Updater.exe"
+          if (-not (Test-Path "publish/MDBStudio.Updater.exe")) { throw "Updater EXE missing." }
           (Get-FileHash "publish/MDBStudio.exe" -Algorithm SHA256).Hash + "  MDBStudio.exe" | Set-Content "publish/SHA256.txt" -Encoding ascii
       - name: Package and publish standard GitHub release
         shell: pwsh
@@ -67,6 +73,8 @@ jobs:
           $file = "MDBStudio-Windows-x64-$tag.zip"
           Compress-Archive -Path "publish\*" -DestinationPath $file -CompressionLevel Optimal -Force
           if (-not (Test-Path $file)) { throw "Release ZIP missing." }
+          $checksum = (Get-FileHash $file -Algorithm SHA256).Hash
+          "$checksum  $file" | Set-Content -Path "$file.sha256" -Encoding ascii
           $notes = @(
             "# MDB Studio $tag"
             ""
@@ -74,18 +82,18 @@ jobs:
             ""
             "Includes the redesigned MDB Studio interface and app icon, MDB/ACCDB database browsing, large-table navigation, collision-aware record copy/paste with new identifiers, multi-row duplication and deletion controls, read-only SQL, backups, full-table CSV export and Check updates."
             ""
-            "The ZIP is a portable application folder, not an installer. Extract all files together and launch MDBStudio.exe."
+            "The ZIP includes the app and a separate self-contained updater. Extract v1.0.2 once, then future updates install directly via Check & install updates."
             ""
             "Windows runtime and antivirus certification have not been independently completed. This executable is not code-signed. Earlier unrelated experimental Go executables were flagged by Defender; never disable antivirus protection or override a threat warning to run MDB Studio."
             ""
             "Work on backups of important databases. This is not a feature-complete Microsoft Access replacement."
             ""
-            "Includes SHA256.txt for the executable. Built from commit $env:GITHUB_SHA."
+            "Includes an external SHA256 manifest for verified in-app updates, plus SHA256.txt for the executable. Built from commit $env:GITHUB_SHA."
           )
           $notes | Set-Content "RELEASE_NOTES.md" -Encoding utf8
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
             throw "Release already exists. Published versions must not be overwritten."
           }
-          gh release create $tag $file --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "MDB Studio $tag" --notes-file RELEASE_NOTES.md --latest
+          gh release create $tag $file "$file.sha256" --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "MDB Studio $tag" --notes-file RELEASE_NOTES.md --latest
           if ($LASTEXITCODE -ne 0) { throw "GitHub release publishing failed." }
