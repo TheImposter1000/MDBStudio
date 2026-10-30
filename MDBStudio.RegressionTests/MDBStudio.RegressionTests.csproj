@@ -13,5 +13,6 @@
     <Compile Include="../MDBStudio/PasteIdentityCatalog.cs" Link="PasteIdentityCatalog.cs"/>
     <Compile Include="../MDBStudio/RecordClipboard.cs" Link="RecordClipboard.cs"/>
     <Compile Include="../MDBStudio/GridCellEditor.cs" Link="GridCellEditor.cs"/>
+    <Compile Include="../MDBStudio/RecordDeletion.cs" Link="RecordDeletion.cs"/>
   </ItemGroup>
 </Project>
