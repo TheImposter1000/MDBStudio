@@ -10,6 +10,10 @@ internal static class Program
         TestRepeatedPaste();
         TestCompositeKeyIsProtected();
         TestGuidKey();
+        TestCellCopyAndBroadcast();
+        TestMultiColumnPaste();
+        TestProtectedKeysAndInvalidValues();
+        TestTextClipboardRoundtrip();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -94,6 +98,80 @@ internal static class Program
         var result = RecordClipboard.Paste(table, identities, true, new[] { table.Rows[0] });
         Check(result.Added == 1 && result.GeneratedIds == 1, "GUID duplicates must receive new IDs.");
         Check((Guid)table.Rows[1]["UID"] != old, "New GUID must differ from source.");
+    }
+
+    private static void TestCellCopyAndBroadcast()
+    {
+        DataTable table = Example();
+        var source = GridCellEditor.CopyValues(new[]
+        {
+            new GridCellEditor.CellValue(0, 0, table.Rows[0]["BeltUID"])
+        });
+        Check(source == "0", "Copy must include only the selected cell, not the complete record.");
+        var clipboard = GridCellEditor.ParseValues(source);
+        Check(clipboard.Length == 1 && clipboard[0].Length == 1, "Single cell clipboard format.");
+        var patches = Enumerable.Range(0, 2).Select(i =>
+            new GridCellEditor.CellPatch(table.Rows[i], table.Columns["BeltOrder"]!, "1235343")).ToArray();
+        int changed = GridCellEditor.Apply(patches);
+        Check(changed == 2, "One copied number should fill many selected cells.");
+        Check((int)table.Rows[0]["BeltOrder"] == 1235343 &&
+              (int)table.Rows[1]["BeltOrder"] == 1235343, "Both target cells should be updated.");
+        Check(table.Rows.Count == 2, "Cell pasting must never create a new record.");
+        Check((int)table.Rows[0]["UID"] == 13 &&
+              (string)table.Rows[0]["Recordname"] == "Prairie Cup013", "Other columns unchanged.");
+    }
+
+    private static void TestMultiColumnPaste()
+    {
+        DataTable table = Example();
+        string input = "7\t40\r\n8\t41";
+        var copied = GridCellEditor.ParseValues(input);
+        var patches = new List<GridCellEditor.CellPatch>();
+        for (int r = 0; r < copied.Length; r++)
+        {
+            patches.Add(new GridCellEditor.CellPatch(table.Rows[r], table.Columns["BeltUID"]!, copied[r][0]));
+            patches.Add(new GridCellEditor.CellPatch(table.Rows[r], table.Columns["BeltOrder"]!, copied[r][1]));
+        }
+        Check(GridCellEditor.Apply(patches) == 4, "Multi-column grid paste count.");
+        Check((int)table.Rows[0]["BeltUID"] == 7 &&
+              (int)table.Rows[1]["BeltOrder"] == 41, "Pasted cells should match their coordinates.");
+        Check(table.Rows.Count == 2, "Pasting cell blocks must not insert records.");
+    }
+
+    private static void TestProtectedKeysAndInvalidValues()
+    {
+        DataTable table = Example();
+        try
+        {
+            GridCellEditor.Apply(new[] { new GridCellEditor.CellPatch(table.Rows[0], table.Columns["UID"]!, "999") });
+            throw new Exception("Editing the primary key should have been blocked.");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("primary key")) { }
+
+        try
+        {
+            GridCellEditor.Apply(new[]
+            {
+                new GridCellEditor.CellPatch(table.Rows[0], table.Columns["BeltOrder"]!, "55"),
+                new GridCellEditor.CellPatch(table.Rows[1], table.Columns["BeltUID"]!, "not a number")
+            });
+            throw new Exception("Invalid numeric paste should have been blocked.");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Cannot paste")) { }
+        Check((int)table.Rows[0]["BeltOrder"] == 13,
+            "A failed multi-cell paste must not partially modify the table.");
+    }
+
+    private static void TestTextClipboardRoundtrip()
+    {
+        string value = "Has \"quotes\", tabs\tand\nnew lines";
+        string text = GridCellEditor.CopyValues(new[]
+        {
+            new GridCellEditor.CellValue(0, 0, value)
+        });
+        var parsed = GridCellEditor.ParseValues(text);
+        Check(parsed.Length == 1 && parsed[0].Length == 1 && parsed[0][0] == value,
+            "Copied text must roundtrip, even with embedded quotes, tabs and new lines.");
     }
 
     private static void Check(bool condition, string failure)
