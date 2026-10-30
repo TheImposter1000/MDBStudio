@@ -14,6 +14,12 @@ Not yet implemented: full Access table design, relationships editing, forms, rep
 
 The earlier experimental **Go-based** EXE distributed outside this repository was flagged by Microsoft Defender. Do not run, restore, whitelist, or redistribute those earlier EXEs. This is a fresh Windows C# implementation, not a copy of those binaries. A successful GitHub build does **not** establish that the resulting executable has passed antivirus scanning, is code-signed, or is production-safe. The GitHub artifact is explicitly labeled UNVERIFIED.
 
+## New interface and clipboard records
+
+The redesigned blue-and-white Windows desktop interface includes the MDB Studio geometric database logo as the app icon and header artwork, a structured toolbar, searchable table navigation, tabbed table/SQL workspace, contextual right-click record actions, and a status bar. Use **Ctrl+C** or Copy records to copy selected full rows as tab-separated values with a header for spreadsheet compatibility. Use **Ctrl+V** or Paste records to add new rows from MDB Studio or a spreadsheet. Duplicate repeats selected rows only when Access generates the primary key automatically; tables with manual keys require new unique IDs. Delete marks selected rows for deletion only after confirmation. Pasted, duplicated, and deleted rows remain pending until **Save Changes**. Copying from a read-only table works, but pasting and deleting require a detectable primary key. Clipboard pastes are capped at 10,000 rows per operation.
+
+**Important:** Data type validation, NOT NULL requirements, and relationship constraints remain enforced by Access during saving. Work on a disposable database copy and inspect the pending edits. Design mockups are not evidence of runtime testing.
+
 ## Large-table browsing and updates
 
 MDB Studio no longer truncates table browsing at the first 2,000 records. The default page is 5,000 rows. Use **Next**, **Previous**, and the page-size selector to browse every row, or choose **All records** if the table comfortably fits in memory. Paging relies on the Access OLE DB adapter's row-window support rather than an Access SQL `OFFSET` clause. Tables with detectable primary keys are sorted by their key for consistent page boundaries; tables without keys are read-only, and their page order can shift if another program changes the database while browsing. Switching pages asks about unsaved edits so they cannot be silently lost. Table export streams the full saved table, not only the page.
