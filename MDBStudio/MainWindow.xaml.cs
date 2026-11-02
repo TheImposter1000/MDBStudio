@@ -332,7 +332,7 @@ public partial class MainWindow : Window
         if (file.ShowDialog(this) != true) return;
         try
         {
-            var currentSession = _session;
+            var currentSession = _session!;
             var wizard = new ExcelImportDialog(file.FileName, _allTables) { Owner = this };
             if (wizard.ShowDialog() != true || wizard.SelectedSheet is null) return;
 
