@@ -79,3 +79,11 @@ Click **Import Excel** to select an `.xlsx` file, choose a worksheet, review its
 Excel imports are **confirmed and committed separately** from Save Changes, after creating a database backup. This is deliberate: you see a preview and approve the destination before MDB Studio changes the database. Pending edits in the current table must be saved first. The importer does not execute macros and supports `.xlsx`, not legacy `.xls` or `.xlsm`. Importing into a new table is a new MDB table operation, not a new MDB file.
 
 The Excel integration uses the open-source ClosedXML 0.105.1 library. As always, experiment on a copied database before using valuable data.
+
+## CSV import and query export (v1.1.1)
+
+The **Import Excel/CSV** toolbar command now accepts comma-separated `.csv` files and `.xlsx` workbooks. When importing a CSV, the first record supplies field names, and the same preview and destination wizard lets you either create a new MDB table or append rows to an existing table. CSV values are treated as text until matched with the destination MDB field types, preserving identifiers such as `000012`. It supports standard double-quoted fields with embedded commas, quotes, and newlines as well as UTF-8 input including BOM. The importer rejects mismatched field counts and enforces a limit of 50 MB, 100,000 data records, and 200 columns. Imports require confirmation and a database backup; they commit separately from Save Changes.
+
+Under **SQL Query**, run a SELECT query and choose either **Export results to Excel (.xlsx)** or **Export results to CSV (.csv)**. CSV exports contain all returned query rows and headings, use UTF-8 with BOM, and properly escape commas, quotes and line breaks. When exporting text values that spreadsheet software might treat as formulas (beginning with `=`, `+`, `-` or `@`), MDB Studio prefixes an apostrophe in the CSV to prevent formula execution. This intentionally changes that cell's CSV representation and should be accounted for if round-tripping formula-like text. Numeric negative values are exported unchanged.
+
+Existing full-table CSV export remains available. This update does not add legacy `.xls` support. Use copies of important databases when validating imports.
