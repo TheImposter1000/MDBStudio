@@ -152,12 +152,7 @@ public static class GridCellEditor
             if (col.AllowDBNull) return DBNull.Value;
             throw new FormatException("This column cannot be blank.");
         }
-        if (type == typeof(bool))
-        {
-            if (text == "1") return true;
-            if (text == "0") return false;
-            return bool.Parse(text);
-        }
+        if (type == typeof(bool)) return SpreadsheetImportValue.ParseAccessBoolean(text);
         if (type == typeof(Guid)) return Guid.Parse(text);
         if (type == typeof(DateTime))
         {
