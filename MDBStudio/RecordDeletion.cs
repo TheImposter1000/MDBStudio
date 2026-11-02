@@ -32,7 +32,7 @@ public static class RecordDeletion
             throw new InvalidOperationException("Only saved records can be matched for deletion.");
 
         var columns = row.Table.Columns.Cast<DataColumn>()
-            .Where(c => !c.ColumnName.Contains(']') && !c.ColumnName.Contains('\\0'))
+            .Where(c => !c.ColumnName.Contains(']') && !c.ColumnName.Contains('\0'))
             .Where(c => c.DataType == typeof(int) || c.DataType == typeof(long) ||
                 c.DataType == typeof(short) || c.DataType == typeof(byte) ||
                 c.DataType == typeof(bool) || c.DataType == typeof(DateTime) ||
