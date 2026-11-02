@@ -69,3 +69,13 @@ For large tables, select the cells on the current loaded page, use page-size con
 ## Restore deleting records (v1.0.4)
 
 Whole-record deletion remains available with cell-based copy and paste. Select one or several records using **any cells in the relevant rows** or their **row headers**, then click **Delete records** in the toolbar or context menu. **Ctrl+Delete** performs the same record-deletion action. The application asks for confirmation and marks only the selected records for deletion. **Save Changes** commits deletions with the existing MDB backup safeguard. **Delete** alone clears selected cell values, rather than deleting whole rows, unless complete rows were selected using the row headers. Selected rows are deduplicated, and unsaved new records can be removed without issuing a database DELETE. Tables without a detectable primary key remain read-only. If no rows are selected, the Delete records command remains unavailable.
+
+## Excel import and query export (v1.1.0)
+
+Run a SELECT query in the SQL Query tab and click **Export results to Excel (.xlsx)**. MDB Studio creates an actual Excel workbook containing the returned query columns and records, with frozen headers, an autofilter and readable formatting. This exports the query results rather than an entire database table. Excel row limits still apply.
+
+Click **Import Excel** to select an `.xlsx` file, choose a worksheet, review its columns and first 30 records, and either **create a new MDB table** or **append rows to an existing table**. New tables use an AutoNumber primary key named `_MDBStudioID`; the imported columns are stored as long-text fields to preserve formatted identifiers and leading zeros. Existing-table imports match Excel header names to database columns, skip AutoNumber fields, validate data types, and are subject to primary key, relationship and unique-index restrictions. Unmatched headings are ignored. Use one sheet per import; files larger than 50 MB or worksheets above 100,000 records / 200 columns must be split.
+
+Excel imports are **confirmed and committed separately** from Save Changes, after creating a database backup. This is deliberate: you see a preview and approve the destination before MDB Studio changes the database. Pending edits in the current table must be saved first. The importer does not execute macros and supports `.xlsx`, not legacy `.xls` or `.xlsm`. Importing into a new table is a new MDB table operation, not a new MDB file.
+
+The Excel integration uses the open-source ClosedXML 0.105.1 library. As always, experiment on a copied database before using valuable data.
