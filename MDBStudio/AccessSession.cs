@@ -465,7 +465,8 @@ public sealed class AccessSession
         }
 
         // Important: file copy is done before a database connection and before any mutation.
-        if (!_hasBackup) Backup();
+        // Every deletion requires a fresh backup, even if this session saved earlier.
+        if (!_hasBackup || modified.Any(row => row.RowState == DataRowState.Deleted)) Backup();
         using var conn = Open();
         using var transaction = conn.BeginTransaction();
         try
