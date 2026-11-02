@@ -108,7 +108,7 @@
         </StackPanel>
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
           <Border Background="#ECF6FE" CornerRadius="6" Padding="10,7" Margin="4,0">
-            <TextBlock Text="MDB Studio v1.0.4" FontSize="11" Foreground="#2467A8"/>
+            <TextBlock Text="MDB Studio v1.1.0" FontSize="11" Foreground="#2467A8"/>
           </Border>
           <Button x:Name="CheckUpdatesButton" Style="{StaticResource ToolButton}" Click="CheckUpdates_Click" Content="Check &amp; install updates"/>
         </StackPanel>
@@ -130,6 +130,10 @@
           </Button>
           <Button x:Name="ExportButton" Style="{StaticResource ToolButton}" Click="Export_Click" IsEnabled="False">
             <StackPanel><TextBlock Text="⇧" FontSize="21" TextAlignment="Center"/><TextBlock Text="Export all CSV" FontSize="11"/></StackPanel>
+          </Button>
+          <Button x:Name="ImportExcelButton" Style="{StaticResource ToolButton}" Click="ImportExcel_Click" IsEnabled="False"
+                  ToolTip="Import an Excel worksheet into a new MDB table or append to an existing table.">
+            <StackPanel><TextBlock Text="▦" FontSize="21" TextAlignment="Center"/><TextBlock Text="Import Excel" FontSize="11"/></StackPanel>
           </Button>
           <Border Width="1" Height="58" Background="#DDE6F3" Margin="10,0"/>
           <Button x:Name="CopyButton" Style="{StaticResource ToolButton}" Click="CopyCells_Click" IsEnabled="False" ToolTip="Copy selected cells (Ctrl+C)">
@@ -235,8 +239,13 @@
                          Foreground="#7186A3" Margin="0,0,0,12"/>
               <TextBox x:Name="SqlInput" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap"
                        VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12"/>
-              <Button Grid.Row="2" Style="{StaticResource BlueButton}" Content="Run SELECT query"
-                      HorizontalAlignment="Left" Margin="0,12,0,12" Click="Query_Click"/>
+              <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,12">
+                <Button Style="{StaticResource BlueButton}" Content="Run SELECT query"
+                        HorizontalAlignment="Left" Click="Query_Click"/>
+                <Button x:Name="ExportQueryExcelButton" Style="{StaticResource ToolButton}"
+                        Content="Export results to Excel (.xlsx)" Margin="15,0,0,0" IsEnabled="False"
+                        Click="ExportQueryExcel_Click"/>
+              </StackPanel>
               <DataGrid x:Name="QueryGrid" Grid.Row="3" IsReadOnly="True"
                         AutoGenerateColumns="True" CanUserAddRows="False" CanUserDeleteRows="False"/>
             </Grid>
