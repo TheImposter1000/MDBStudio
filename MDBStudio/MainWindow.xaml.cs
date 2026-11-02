@@ -87,6 +87,7 @@ public partial class MainWindow : Window
             RecordsGrid.ItemsSource = null;
             QueryGrid.ItemsSource = null;
             ExportQueryExcelButton.IsEnabled = false;
+            ExportQueryCsvButton.IsEnabled = false;
             ImportExcelButton.IsEnabled = true;
             FileLabel.Text = dialog.FileName;
             DatabaseTitle.Text = Path.GetFileName(dialog.FileName);
@@ -273,6 +274,7 @@ public partial class MainWindow : Window
             var results = _session.Select(SqlInput.Text);
             QueryGrid.ItemsSource = results.DefaultView;
             ExportQueryExcelButton.IsEnabled = true;
+            ExportQueryCsvButton.IsEnabled = true;
             Status("Query returned " + results.Rows.Count.ToString("N0") + " rows.");
         }
         catch (Exception ex) { Error("Query failed", ex); }
@@ -310,6 +312,38 @@ public partial class MainWindow : Window
         finally { ExportQueryExcelButton.IsEnabled = true; }
     }
 
+    private async void ExportQueryCsv_Click(object sender, RoutedEventArgs e)
+    {
+        if (QueryGrid.ItemsSource is not DataView view)
+        {
+            MessageBox.Show(this, "Run a SELECT query first.", "CSV export");
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Filter = "CSV files (*.csv)|*.csv",
+            FileName = "MDBStudio_Query_" + DateTime.Now.ToString("yyyyMMdd_HHmm") + ".csv",
+            DefaultExt = ".csv",
+            AddExtension = true,
+            OverwritePrompt = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+
+        ExportQueryCsvButton.IsEnabled = false;
+        try
+        {
+            var results = view.Table.Copy();
+            Status($"Exporting {results.Rows.Count:N0} query results to CSV...");
+            await Task.Run(() => CsvTransfer.ExportQuery(results, dialog.FileName));
+            Status($"Exported {results.Rows.Count:N0} query results to {dialog.FileName}.");
+            MessageBox.Show(this, "CSV query export completed successfully.",
+                "Export to CSV", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) { Error("CSV export failed", ex); }
+        finally { ExportQueryCsvButton.IsEnabled = true; }
+    }
+
     private async void ImportExcel_Click(object sender, RoutedEventArgs e)
     {
         if (_session is null) return;
@@ -317,7 +351,7 @@ public partial class MainWindow : Window
         if (_table?.GetChanges() is not null)
         {
             MessageBox.Show(this,
-                "Save or discard your pending database edits before importing Excel. " +
+                "Save or discard your pending database edits before importing Excel or CSV. " +
                 "The import commits separately and must not overwrite your unsaved work.",
                 "Unsaved records", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
@@ -325,7 +359,7 @@ public partial class MainWindow : Window
 
         var file = new OpenFileDialog
         {
-            Filter = "Excel workbooks (*.xlsx)|*.xlsx",
+            Filter = "Excel and CSV files (*.xlsx;*.csv)|*.xlsx;*.csv|Excel workbooks (*.xlsx)|*.xlsx|CSV files (*.csv)|*.csv",
             CheckFileExists = true,
             Multiselect = false
         };
@@ -340,7 +374,7 @@ public partial class MainWindow : Window
             var target = wizard.Destination;
             var create = wizard.CreateNewTable;
             ImportExcelButton.IsEnabled = false;
-            Status($"Importing {data.Rows.Count:N0} Excel records into {target}; backing up MDB...");
+            Status($"Importing {data.Rows.Count:N0} spreadsheet records into {target}; backing up MDB...");
             try
             {
                 // File and database work happen off the UI thread.
@@ -353,7 +387,7 @@ public partial class MainWindow : Window
                 TableList.SelectedItem = target;
                 _suppressSelection = false;
                 LoadTable(target, 0);
-                Status($"Excel import complete: {imported:N0} records into {target}. MDB backup created.");
+                Status($"Import complete: {imported:N0} records into {target}. MDB backup created.");
                 MessageBox.Show(this,
                     $"Imported {imported:N0} records successfully into '{target}'.\n\n" +
                     "The import was committed separately and a backup of your MDB was created.",
@@ -363,8 +397,8 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            Error("Excel import failed", ex);
-            Status("Excel import was not completed. Check the error and your MDB backup.");
+            Error("Spreadsheet import failed", ex);
+            Status("Import was not completed. Check the error and your MDB backup.");
         }
     }
 
