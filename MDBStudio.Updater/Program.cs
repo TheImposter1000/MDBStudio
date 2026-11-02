@@ -12,6 +12,22 @@ namespace MDBStudio.Updater;
 /// </summary>
 internal static class Program
 {
+    private static string UpdateLogPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "MDBStudio", "update.log");
+
+    private static void Log(string message)
+    {
+        // Logging must never prevent a recovery or an update attempt.
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(UpdateLogPath)!);
+            File.AppendAllText(UpdateLogPath,
+                DateTimeOffset.Now.ToString("O") + " " + message + Environment.NewLine);
+        }
+        catch { /* best-effort diagnostic logging */ }
+    }
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -32,19 +48,25 @@ internal static class Program
             if (target == Path.GetPathRoot(target) || !File.Exists(Path.Combine(target, "MDBStudio.exe")))
                 throw new InvalidOperationException("Target is not a valid MDB Studio application folder.");
 
+            Log("Updater started; waiting for MDB Studio to exit. Folder: " + target);
             WaitForExit(processId);
+            Log("Original process exited; checking package and installing.");
             Apply(target, archive, expected);
+            Log("Program files installed successfully. Attempting restart.");
             _ = Process.Start(new ProcessStartInfo(Path.Combine(target, "MDBStudio.exe"))
             {
                 UseShellExecute = true,
                 WorkingDirectory = target
             }) ?? throw new InvalidOperationException("Update installed but MDB Studio did not relaunch.");
+            Log("Application restart launched; update completed.");
             return 0;
         }
         catch (Exception ex)
         {
+            Log("Update failed: " + ex);
             MessageBox.Show("The update could not be completed.\n\n" + ex.Message +
                 "\n\nYour previous application files have been restored where possible. " +
+                "\nUpdater log: " + UpdateLogPath + "\n" +
                 "Do not disable Windows Defender to complete an update.",
                 "MDB Studio update failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
@@ -147,6 +169,7 @@ internal static class Program
         }
         catch
         {
+            Log("Update failure during file replacement. Restoring backup copies.");
             // Restore the pre-update application if any replacement failed.
             foreach (var relative in overwritten.AsEnumerable().Reverse())
             {

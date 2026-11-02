@@ -369,8 +369,8 @@ public sealed class AccessSession
                 catch (Exception ex) when (ex is FormatException or OverflowException or InvalidCastException)
                 {
                     throw new InvalidOperationException(
-                        $"spreadsheet row {i + 2}, column '{sources[c].ColumnName}' is invalid for " +
-                        $"'{destinations[c].ColumnName}': {ex.Message}", ex);
+                        $"Spreadsheet row {i + 2}, column '{sources[c].ColumnName}' is invalid for " +
+                        $"'{destinations[c].ColumnName}' (MDB type: {destinations[c].DataType.Name}): {ex.Message}", ex);
                 }
             }
             values.Add(items);

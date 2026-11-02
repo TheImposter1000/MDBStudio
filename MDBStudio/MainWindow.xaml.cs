@@ -25,7 +25,40 @@ public partial class MainWindow : Window
     private IReadOnlyList<DataGridCellInfo>? _rightClickCells;
     private bool _applyingCellChanges;
 
-    public MainWindow() => InitializeComponent();
+    public MainWindow()
+    {
+        InitializeComponent();
+        VersionLabel.Text = "MDB Studio " + InstalledVersion();
+        Title = "MDB Studio " + InstalledVersion() + " | Database Workspace";
+    }
+
+    private static string InstalledVersion()
+    {
+        Version? version = typeof(MainWindow).Assembly.GetName().Version;
+        return version is null ? "unknown" :
+            "v" + version.Major + "." + version.Minor + "." + version.Build;
+    }
+
+    private static string UpdateLogPath() =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MDBStudio", "update.log");
+
+    private void InstallationDetails_Click(object sender, RoutedEventArgs e)
+    {
+        string folder = Path.GetFullPath(AppContext.BaseDirectory);
+        string executable = Environment.ProcessPath ?? Path.Combine(folder, "MDBStudio.exe");
+        string info =
+            "Running version: " + InstalledVersion() + "\n" +
+            "Expected release: " + UpdateChecker.CurrentReleaseTag + "\n" +
+            "Executable: " + executable + "\n" +
+            "Installation folder: " + folder + "\n" +
+            "Updater included: " + File.Exists(Path.Combine(folder, "MDBStudio.Updater.exe")) + "\n" +
+            "Updater log: " + UpdateLogPath();
+        Clipboard.SetText(info);
+        MessageBox.Show(this, info + "\n\nThese details were copied to the clipboard. " +
+            "If an update fails, check the installation folder and updater log.",
+            "MDB Studio installation details", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
 
     private void Status(string message) => StatusLabel.Text = message;
 
@@ -433,10 +466,12 @@ public partial class MainWindow : Window
         try
         {
             var result = await UpdateChecker.CheckAsync();
+            Status("Installed: " + InstalledVersion() + ", latest published: " + result.LatestTag + ".");
             if (!result.UpdateAvailable)
             {
-                Status($"MDB Studio {result.CurrentTag} is up to date.");
-                MessageBox.Show(this, $"You're using {result.CurrentTag}. This is the latest release.",
+                Status("MDB Studio " + InstalledVersion() + " is up to date.");
+                MessageBox.Show(this, "Installed executable: " + InstalledVersion() + "\nLatest GitHub release: " + result.LatestTag + "\n\n" +
+                    "Installation folder: " + Path.GetFullPath(AppContext.BaseDirectory),
                     "MDB Studio updates", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -448,7 +483,7 @@ public partial class MainWindow : Window
             }
 
             var proceed = MessageBox.Show(this,
-                $"MDB Studio {result.LatestTag} is available.\n\nInstalled: {result.CurrentTag}\n" +
+                $"MDB Studio {result.LatestTag} is available.\n\nInstalled executable: {InstalledVersion()}\n" +
                 $"Available: {result.LatestTag}\n\n" +
                 "Install this update directly into your current MDB Studio folder? " +
                 "The application will close, update its own files, and reopen automatically. " +
@@ -475,6 +510,23 @@ public partial class MainWindow : Window
 
             Status($"Downloading and verifying {result.LatestTag}. No files are being replaced yet...");
             var staged = await UpdateChecker.DownloadAndVerifyAsync(result);
+            // Verify the portable installation folder is writable BEFORE
+            // exiting; protected folders cannot be updated without elevation.
+            string probe = Path.Combine(AppContext.BaseDirectory,
+                ".mdbstudio-write-test-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                using (var stream = new FileStream(probe, FileMode.CreateNew,
+                    FileAccess.Write, FileShare.None)) stream.WriteByte(1);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                throw new InvalidOperationException(
+                    "MDB Studio cannot update files in its current installation folder. " +
+                    "Move the portable app to a folder your Windows account can write to " +
+                    "and retry. Current folder: " + Path.GetFullPath(AppContext.BaseDirectory), ex);
+            }
+            finally { if (File.Exists(probe)) File.Delete(probe); }
             var launch = new ProcessStartInfo(staged.UpdaterPath)
             {
                 WorkingDirectory = staged.WorkDirectory,
