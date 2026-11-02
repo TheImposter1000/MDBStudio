@@ -182,7 +182,8 @@ public partial class MainWindow : Window
             ExportButton.IsEnabled = true;
             UpdateActionStates();
             TableLabel.Text = name;
-            KeyLabel.Text = writable ? "Edit enabled (primary key detected)" : "Read only (no primary key)";
+            KeyLabel.Text = writable ? "Edit enabled (primary key detected)" :
+                "Cell editing disabled (no primary key); record deletion is available.";
             UpdatePageControls(table.Rows.Count);
             Status($"Loaded {table.Rows.Count:N0} rows from {name}. Total: {_totalRecords:N0}. No 2,000-row ceiling.");
         }
@@ -565,9 +566,13 @@ public partial class MainWindow : Window
         FillDownButton.IsEnabled = writable && cellCount > 1;
         // Cell selection is the default in v1.0.3, so deleting records must
         // also be available when the user selects cells rather than row headers.
-        DeleteButton.IsEnabled = writable &&
+        DeleteButton.IsEnabled = open &&
             (RecordsGrid.SelectedItems.OfType<DataRowView>().Any() ||
              RecordsGrid.SelectedCells.Any(cell => cell.Item is DataRowView));
+        // Keyless tables remain read-only for edits, but staged deletions must
+        // still enable Save Changes so the user can commit them.
+        SaveButton.IsEnabled = writable ||
+            (open && _table!.Rows.Cast<DataRow>().Any(row => row.RowState == DataRowState.Deleted));
         if (open)
         {
             int dirty = _table!.Rows.Cast<DataRow>()
@@ -870,7 +875,7 @@ public partial class MainWindow : Window
 
     private void DeleteRecords_Click(object sender, RoutedEventArgs e)
     {
-        if (_table is null || _table.PrimaryKey.Length == 0) return;
+        if (_table is null) return;
         if (!CommitGridEdit()) return;
         try
         {
@@ -882,8 +887,10 @@ public partial class MainWindow : Window
             }
             if (MessageBox.Show(this,
                 $"Delete {rows.Count:N0} selected record(s)?\n\n" +
-                "Only the selected records will be removed. This action remains pending " +
-                "until you click Save Changes, and MDB Studio backs up the file before saving.",
+                "Deletion remains pending until you click Save Changes. MDB Studio " +
+                "backs up the file before saving. On tables without a primary key, " +
+                "MDB Studio checks matching records to prevent accidental deletion " +
+                "of unselected duplicates.",
                 "Confirm record deletion",
                 MessageBoxButton.YesNo, MessageBoxImage.Warning,
                 MessageBoxResult.No) != MessageBoxResult.Yes)
