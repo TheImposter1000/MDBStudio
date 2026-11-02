@@ -120,7 +120,7 @@ public static class ExcelTransfer
                         cell.SetValue((double)integer); break;
                     case long integer: cell.SetValue(integer.ToString(CultureInfo.InvariantCulture)); break;
                     case double number: cell.SetValue(number); break;
-                    case float number: cell.SetValue((double)number); break;
+                    case float single: cell.SetValue((double)single); break;
                     case decimal money: cell.SetValue((double)money); break;
                     case byte[] blob: cell.SetValue(Convert.ToBase64String(blob)); break;
                     default: cell.SetValue(Convert.ToString(value, CultureInfo.InvariantCulture) ?? ""); break;
