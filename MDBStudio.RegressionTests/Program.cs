@@ -23,6 +23,9 @@ internal static class Program
         TestCsvQuotedImportAndExport();
         TestCsvMalformedRows();
         TestCsvFormulaEscaping();
+        TestAccessBooleanSpreadsheetValues();
+        TestAccessBooleanCsvImport();
+        TestAccessBooleanCellPaste();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -364,6 +367,81 @@ internal static class Program
                 "Negative numeric values must remain intact.");
         }
         finally { try { File.Delete(file); } catch { } }
+    }
+
+    private static void TestAccessBooleanSpreadsheetValues()
+    {
+        // User-reported regression: spreadsheet row 5, column 'Victor'
+        // contains -1, the native Access Yes/No representation of True.
+        var boolColumn = new DataTable("tblWorkers").Columns.Add("Victor", typeof(bool));
+        foreach (var text in new[] { "-1", "1", "True", "TRUE", "yes", "Y", "on", "t", " -1 " })
+            Check((bool)SpreadsheetImportValue.ConvertToColumn(text, boolColumn),
+                $"Access boolean value '{text}' must import as True.");
+        foreach (var text in new[] { "0", "False", "FALSE", "no", "N", "off", "f", " 0 " })
+            Check(!(bool)SpreadsheetImportValue.ConvertToColumn(text, boolColumn),
+                $"Access boolean value '{text}' must import as False.");
+
+        foreach (var invalid in new[] { "-2", "2", "maybe", "1.2" })
+        {
+            try
+            {
+                SpreadsheetImportValue.ConvertToColumn(invalid, boolColumn);
+                throw new Exception($"Invalid boolean '{invalid}' was silently accepted.");
+            }
+            catch (FormatException ex) when (ex.Message.Contains("Yes/No")) { }
+        }
+
+        boolColumn.AllowDBNull = true;
+        Check(SpreadsheetImportValue.ConvertToColumn("", boolColumn) == DBNull.Value,
+            "Nullable Yes/No column should accept a blank value.");
+        boolColumn.AllowDBNull = false;
+        try
+        {
+            SpreadsheetImportValue.ConvertToColumn("", boolColumn);
+            throw new Exception("Nonnullable Yes/No column should reject blanks.");
+        }
+        catch (FormatException ex) when (ex.Message.Contains("requires a value")) { }
+
+        var numeric = new DataTable("Numbers").Columns.Add("Victor", typeof(int));
+        Check((int)SpreadsheetImportValue.ConvertToColumn("-1", numeric) == -1,
+            "Integer -1 values should remain numeric -1.");
+    }
+
+    private static void TestAccessBooleanCsvImport()
+    {
+        string filename = Path.Combine(Path.GetTempPath(),
+            "MDBStudio-YesNo-" + Guid.NewGuid().ToString("N") + ".csv");
+        try
+        {
+            File.WriteAllText(filename, "Name,Victor\r\nAlpha,-1\r\nBeta,0\r\nGamma,True\r\n");
+            var data = CsvTransfer.ReadFile(filename);
+            var destination = new DataTable("Workers");
+            var victor = destination.Columns.Add("Victor", typeof(bool));
+            Check(data.Rows.Count == 3, "The CSV must contain all rows.");
+            Check((bool)SpreadsheetImportValue.ConvertToColumn((string)data.Rows[0]["Victor"], victor),
+                "CSV -1 must be converted to a Yes/No True on MDB import.");
+            Check(!(bool)SpreadsheetImportValue.ConvertToColumn((string)data.Rows[1]["Victor"], victor),
+                "CSV 0 must be converted to a Yes/No False on MDB import.");
+            Check((bool)SpreadsheetImportValue.ConvertToColumn((string)data.Rows[2]["Victor"], victor),
+                "CSV True must be converted to a Yes/No True on MDB import.");
+        }
+        finally { try { File.Delete(filename); } catch { } }
+    }
+
+    private static void TestAccessBooleanCellPaste()
+    {
+        var table = new DataTable("Workers");
+        var id = table.Columns.Add("UID", typeof(int));
+        var victor = table.Columns.Add("Victor", typeof(bool));
+        table.PrimaryKey = new[] { id };
+        table.Rows.Add(1, false);
+        table.AcceptChanges();
+        Check(GridCellEditor.Apply(new[]
+        {
+            new GridCellEditor.CellPatch(table.Rows[0], victor, "-1")
+        }) == 1, "Pasting -1 into a Yes/No cell must update it.");
+        Check((bool)table.Rows[0][victor],
+            "Pasted -1 must represent True in the resulting DataTable.");
     }
 
     private static void Check(bool condition, string failure)

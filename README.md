@@ -87,3 +87,10 @@ The **Import Excel/CSV** toolbar command now accepts comma-separated `.csv` file
 Under **SQL Query**, run a SELECT query and choose either **Export results to Excel (.xlsx)** or **Export results to CSV (.csv)**. CSV exports contain all returned query rows and headings, use UTF-8 with BOM, and properly escape commas, quotes and line breaks. When exporting text values that spreadsheet software might treat as formulas (beginning with `=`, `+`, `-` or `@`), MDB Studio prefixes an apostrophe in the CSV to prevent formula execution. This intentionally changes that cell's CSV representation and should be accounted for if round-tripping formula-like text. Numeric negative values are exported unchanged.
 
 Existing full-table CSV export remains available. This update does not add legacy `.xls` support. Use copies of important databases when validating imports.
+
+
+## Importing Access Yes/No flags (v1.1.2)
+
+Excel and CSV imports into existing MDB tables now understand native Access Yes/No values. For Boolean database columns, -1, 1, True, Yes, Y, On, and T import as True. The values 0, False, No, N, Off, and F import as False, regardless of letter case; surrounding whitespace is permitted. A value of -1 remains numeric when the destination field is an integer, rather than a Yes/No field. Invalid Boolean values such as 2 or -2 still stop the import with a field-specific error before the database is modified. Empty cells continue to follow the destination field's nullability constraints. Bulk cell pasting uses the same Access-compatible Boolean parser.
+
+This fixes the error reported when an import contains -1 in a Yes/No field such as Victor. The change does not relax primary-key, unique-index, or relationship constraints; those are still enforced by Access. As before, import is confirmed and a backup is created prior to writing. Test updates against a copy of the database.
