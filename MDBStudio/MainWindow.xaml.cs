@@ -86,6 +86,8 @@ public partial class MainWindow : Window
             _suppressSelection = false;
             RecordsGrid.ItemsSource = null;
             QueryGrid.ItemsSource = null;
+            ExportQueryExcelButton.IsEnabled = false;
+            ImportExcelButton.IsEnabled = true;
             FileLabel.Text = dialog.FileName;
             DatabaseTitle.Text = Path.GetFileName(dialog.FileName);
             RecordSearchBox.Clear();
@@ -270,9 +272,100 @@ public partial class MainWindow : Window
         {
             var results = _session.Select(SqlInput.Text);
             QueryGrid.ItemsSource = results.DefaultView;
+            ExportQueryExcelButton.IsEnabled = true;
             Status("Query returned " + results.Rows.Count.ToString("N0") + " rows.");
         }
         catch (Exception ex) { Error("Query failed", ex); }
+    }
+
+    private async void ExportQueryExcel_Click(object sender, RoutedEventArgs e)
+    {
+        if (QueryGrid.ItemsSource is not DataView view)
+        {
+            MessageBox.Show(this, "Run a SELECT query first.", "Excel export");
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Filter = "Excel workbooks (*.xlsx)|*.xlsx",
+            FileName = "MDBStudio_Query_" + DateTime.Now.ToString("yyyyMMdd_HHmm") + ".xlsx",
+            DefaultExt = ".xlsx",
+            AddExtension = true,
+            OverwritePrompt = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+
+        ExportQueryExcelButton.IsEnabled = false;
+        try
+        {
+            var results = view.Table.Copy();
+            Status($"Exporting {results.Rows.Count:N0} query results to Excel...");
+            await Task.Run(() => ExcelTransfer.ExportQuery(results, dialog.FileName));
+            Status($"Exported {results.Rows.Count:N0} query results to {dialog.FileName}.");
+            MessageBox.Show(this, "Excel query export completed successfully.",
+                "Export to Excel", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) { Error("Excel export failed", ex); }
+        finally { ExportQueryExcelButton.IsEnabled = true; }
+    }
+
+    private async void ImportExcel_Click(object sender, RoutedEventArgs e)
+    {
+        if (_session is null) return;
+        if (!CommitGridEdit()) return;
+        if (_table?.GetChanges() is not null)
+        {
+            MessageBox.Show(this,
+                "Save or discard your pending database edits before importing Excel. " +
+                "The import commits separately and must not overwrite your unsaved work.",
+                "Unsaved records", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var file = new OpenFileDialog
+        {
+            Filter = "Excel workbooks (*.xlsx)|*.xlsx",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (file.ShowDialog(this) != true) return;
+        try
+        {
+            var currentSession = _session;
+            var wizard = new ExcelImportDialog(file.FileName, _allTables) { Owner = this };
+            if (wizard.ShowDialog() != true || wizard.SelectedSheet is null) return;
+
+            var data = wizard.SelectedSheet;
+            var target = wizard.Destination;
+            var create = wizard.CreateNewTable;
+            ImportExcelButton.IsEnabled = false;
+            Status($"Importing {data.Rows.Count:N0} Excel records into {target}; backing up MDB...");
+            try
+            {
+                // File and database work happen off the UI thread.
+                int imported = await Task.Run(() => currentSession.ImportExcel(data, target, create));
+                var names = currentSession.ListTables();
+                _allTables = names;
+                _suppressSelection = true;
+                TableSearchBox.Clear();
+                TableList.ItemsSource = names;
+                TableList.SelectedItem = target;
+                _suppressSelection = false;
+                LoadTable(target, 0);
+                Status($"Excel import complete: {imported:N0} records into {target}. MDB backup created.");
+                MessageBox.Show(this,
+                    $"Imported {imported:N0} records successfully into '{target}'.\n\n" +
+                    "The import was committed separately and a backup of your MDB was created.",
+                    "Excel import complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            finally { ImportExcelButton.IsEnabled = true; }
+        }
+        catch (Exception ex)
+        {
+            Error("Excel import failed", ex);
+            Status("Excel import was not completed. Check the error and your MDB backup.");
+        }
     }
 
     private void Export_Click(object sender, RoutedEventArgs e)
