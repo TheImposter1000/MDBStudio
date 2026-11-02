@@ -26,6 +26,9 @@ internal static class Program
         TestAccessBooleanSpreadsheetValues();
         TestAccessBooleanCsvImport();
         TestAccessBooleanCellPaste();
+        TestNumericClipboardAndLegacyCsvEscapes();
+        TestSignedNumericCsvExportRoundtrip();
+        TestNumericImportDiagnostics();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -454,6 +457,96 @@ internal static class Program
             new GridCellEditor.CellPatch(table.Rows[0], flag, "-1")
         }) == 1, "Pasting -1 into a genuine Yes/No field must work.");
         Check((bool)table.Rows[0][flag], "Real Boolean fields must still import True.");
+    }
+
+    private static void TestNumericClipboardAndLegacyCsvEscapes()
+    {
+        var table = new DataTable("tblMatchHistory");
+        var victor = table.Columns.Add("Victor", typeof(int));
+        var order = table.Columns.Add("BeltOrder", typeof(short));
+
+        // Past exports may add a leading apostrophe to negative text numbers.
+        // Other files can use lookalike Unicode minus signs and invisible
+        // copy/paste marks. All of these represent exactly the integer -1.
+        foreach (string value in new[] {
+            "-1", " -1 ", "'-1", "' -1 ", "\u22121", "\uFF0D1",
+            "\u20111", "\u20131", "\uFE631", "\uFEFF-1",
+            "\u200B-1", "\u2060-1", "\u00A0-1\u00A0",
+            "'\u22121", "'\uFF0D1"
+        })
+        {
+            Check((int)SpreadsheetImportValue.ConvertToColumn(value, victor) == -1,
+                "Victor=-1 should be preserved after safe numeric cleanup: " + value);
+            Check((short)SpreadsheetImportValue.ConvertToColumn(value, order) == -1,
+                "Negative short should also parse after safe cleanup.");
+        }
+        Check((int)SpreadsheetImportValue.ConvertToColumn("1235343", victor) == 1235343,
+            "Normal match winner identifiers must remain unchanged.");
+        Check((int)SpreadsheetImportValue.ConvertToColumn("1,234", victor) == 1234,
+            "Valid thousands-formatted integers must still work.");
+
+        var text = table.Columns.Add("OriginalText", typeof(string));
+        Check((string)SpreadsheetImportValue.ConvertToColumn("'-1", text) == "'-1",
+            "Imported text must never be modified by numeric-only normalization.");
+
+        foreach (string unsafeValue in new[] { "'=1+2", " -SUM(1)", "12A", "--1" })
+        {
+            try
+            {
+                SpreadsheetImportValue.ConvertToColumn(unsafeValue, victor);
+                throw new Exception("Invalid numeric value was silently accepted: " + unsafeValue);
+            }
+            catch (FormatException ex) when (ex.Message.Contains("U+") &&
+                                             ex.Message.Contains("Normalized value")) { }
+        }
+    }
+
+    private static void TestSignedNumericCsvExportRoundtrip()
+    {
+        string file = Path.Combine(Path.GetTempPath(),
+            "MDBStudio-NumericCsv-" + Guid.NewGuid().ToString("N") + ".csv");
+        try
+        {
+            var table = new DataTable("Old Save");
+            table.Columns.Add("Victor", typeof(string));
+            table.Columns.Add("Comment", typeof(string));
+            table.Rows.Add("-1", "=HYPERLINK(\"https://example.com\",\"test\")");
+            CsvTransfer.ExportQuery(table, file);
+            var read = CsvTransfer.ReadFile(file);
+            Check((string)read.Rows[0]["Victor"] == "-1",
+                "CSV export must not add a quote to a safe signed number.");
+            Check(((string)read.Rows[0]["Comment"]).StartsWith("'="),
+                "Formula-like CSV text must still be protected.");
+            var numeric = new DataTable("Destination").Columns.Add("Victor", typeof(int));
+            Check((int)SpreadsheetImportValue.ConvertToColumn(
+                (string)read.Rows[0]["Victor"], numeric) == -1,
+                "A CSV file exported from MDB Studio must re-import numeric -1 intact.");
+
+            // Even CSV files written by the old exporter with its leading
+            // apostrophe should import safely into integer columns.
+            File.WriteAllText(file, "Victor\r\n\"'-1\"\r\n");
+            var oldFile = CsvTransfer.ReadFile(file);
+            Check((int)SpreadsheetImportValue.ConvertToColumn(
+                (string)oldFile.Rows[0]["Victor"], numeric) == -1,
+                "Old MDB Studio CSV escaping must be accepted for numeric columns.");
+        }
+        finally { try { File.Delete(file); } catch { } }
+    }
+
+    private static void TestNumericImportDiagnostics()
+    {
+        var victor = new DataTable("Destination").Columns.Add("Victor", typeof(int));
+        try
+        {
+            SpreadsheetImportValue.ConvertToColumn(" \u2212notnumber", victor);
+            throw new Exception("Invalid numeric input must be rejected.");
+        }
+        catch (FormatException ex) when (
+            ex.Message.Contains("U+2212") &&
+            ex.Message.Contains("normalized", StringComparison.OrdinalIgnoreCase))
+        {
+            // Exact original Unicode minus U+2212 is included for diagnosis.
+        }
     }
 
     private static void Check(bool condition, string failure)

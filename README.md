@@ -110,3 +110,11 @@ The `Victor` field in show history can hold a numeric worker winner ID for a mat
 For an existing destination field named `Victor` that is actually defined as Yes/No (Boolean), MDB Studio rejects the angle sentinel with an actionable schema warning rather than silently converting it into `True`. A Yes/No field cannot faithfully store a numeric no-winner sentinel; select the correct existing numeric field or table. Other genuine Access Yes/No fields still accept `-1` as True and `0` as False.
 
 Regression tests cover CSV imports mixing angle and match rows, preservation of numeric Victor -1 and winner IDs, type mismatch rejection, and regular Access Boolean flags. This is a data integrity protection and does not change any original MDB table schema. As with all TEW database changes, test imports on a copy before importing into the working database.
+
+## Spreadsheet numeric import reliability (v1.1.5)
+
+MDB Studio now accepts numeric cells such as TEW `Victor = -1` even if previous CSV exports stored them as `'-1`, if a pasted value uses a Unicode minus glyph, or if a number includes a common invisible leading/trailing mark. Cleanup happens **only on numeric destination fields**, leaving original text fields and Recordname values unchanged. Invalid or ambiguous inputs still fail before importing any records, now with the raw Unicode code points (such as U+2212) and normalized value in the diagnostic message.
+
+CSV export no longer prepends apostrophes to valid signed numeric **text literals**, such as `-1`. Spreadsheet formula injection protection still applies to expressions such as `=HYPERLINK(...)` and negative formulas such as `-SUM(...)`. Files exported by earlier MDB Studio versions that added an apostrophe to a negative numeric string can now be reimported into a numeric column. Genuine Access Yes/No fields still accept -1 as True; TEW's numeric Victor=-1 stays -1.
+
+Regression coverage includes Excel/CSV-style values, legacy quote-prefixed numbers, UTF-8/Unicode minus signs, numeric IDs, preserved text fields, malicious formula-like strings, error diagnostics, updater checksum validation and rollback. The actual user's spreadsheet has not been supplied for byte-by-byte verification, so test on a copy of the MDB database first.

@@ -150,6 +150,20 @@ public static class CsvTransfer
         int i = 0;
         while (i < value.Length && (value[i] == ' ' || value[i] == '\t' ||
                                     value[i] == '\r' || value[i] == '\n')) i++;
-        return i < value.Length && "=+-@".Contains(value[i]);
+        if (i >= value.Length) return false;
+        char first = value[i];
+        if (first is '+' or '-')
+        {
+            // A signed numeric literal (including TEW Victor=-1) is not a
+            // spreadsheet formula. Do not prefix it with an apostrophe:
+            // doing so breaks CSV re-import into a numeric MDB column.
+            string candidate = value[i..];
+            if (decimal.TryParse(candidate, NumberStyles.Float |
+                    NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out _) ||
+                decimal.TryParse(candidate, NumberStyles.Float |
+                    NumberStyles.AllowThousands, CultureInfo.CurrentCulture, out _))
+                return false;
+        }
+        return "=+-@".Contains(first);
     }
 }
