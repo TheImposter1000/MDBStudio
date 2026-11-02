@@ -1,3 +1,4 @@
+using System.IO;
 using System.Data;
 using MDBStudio;
 
@@ -17,6 +18,8 @@ internal static class Program
         TestDeleteSelectedRecords();
         TestDeletePendingInsertedRecord();
         TestDeleteRequiresPrimaryKey();
+        TestExcelQueryExportAndImport();
+        TestExcelFileRejections();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -222,6 +225,62 @@ internal static class Program
         catch (InvalidOperationException ex) when (ex.Message.Contains("primary key")) { }
         Check(table.Rows[0].RowState == DataRowState.Unchanged,
             "Unsupported deletion must leave all records unchanged.");
+    }
+
+    private static void TestExcelQueryExportAndImport()
+    {
+        string filename = Path.Combine(Path.GetTempPath(), "MDBStudio-Excel-" + Guid.NewGuid().ToString("N") + ".xlsx");
+        try
+        {
+            var results = new DataTable("SQL results");
+            results.Columns.Add("BeltUID", typeof(int));
+            results.Columns.Add("Recordname", typeof(string));
+            results.Columns.Add("Comment", typeof(string));
+            results.Rows.Add(42, "RSPWHayate Cup001", "=1+1");
+            results.Rows.Add(43, "000045", "Sample");
+            ExcelTransfer.ExportQuery(results, filename, "Championship Query");
+            Check(File.Exists(filename), "Query export should create an XLSX workbook.");
+
+            var names = ExcelTransfer.Sheets(filename);
+            Check(names.Count == 1 && names[0] == "Championship Query",
+                "Exported sheet name must match the query label.");
+            var imported = ExcelTransfer.ReadSheet(filename, names[0]);
+            Check(imported.Rows.Count == 2 && imported.Columns.Count == 3,
+                "Workbook import should preserve dimensions.");
+            Check(Convert.ToString(imported.Rows[0]["BeltUID"]) == "42",
+                "Excel numeric cells must be readable.");
+            Check(Convert.ToString(imported.Rows[0]["Recordname"]) == "RSPWHayate Cup001",
+                "Imported text IDs must preserve their padded numeric suffix.");
+            Check(Convert.ToString(imported.Rows[1]["Recordname"]) == "000045",
+                "Excel text values with leading zeros must remain text.");
+            Check(Convert.ToString(imported.Rows[0]["Comment"]) == "=1+1",
+                "Literal text starting with equals must not become a formula.");
+            using var workbook = new ClosedXML.Excel.XLWorkbook(filename);
+            Check(!workbook.Worksheet(1).Cell(2, 3).HasFormula,
+                "Query export must never treat database text as executable Excel formulas.");
+        }
+        finally
+        {
+            try { File.Delete(filename); } catch { }
+        }
+    }
+
+    private static void TestExcelFileRejections()
+    {
+        try
+        {
+            ExcelTransfer.Sheets("not-an-excel-file.xls");
+            throw new Exception("Legacy XLS should have been rejected.");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains(".xlsx")) { }
+
+        var empty = new DataTable("Empty Query");
+        try
+        {
+            ExcelTransfer.ExportQuery(empty, Path.Combine(Path.GetTempPath(), "empty.xlsx"));
+            throw new Exception("Exporting a query without column definitions should be rejected.");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("SELECT query")) { }
     }
 
     private static void Check(bool condition, string failure)
