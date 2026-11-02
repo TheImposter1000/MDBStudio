@@ -312,6 +312,169 @@ public sealed class AccessSession
         return catalog;
     }
 
+    /// <summary>
+    /// Imports a reviewed Excel worksheet either as a new MDB table or by
+    /// appending records to an existing table. A database backup is created
+    /// immediately before import. Every INSERT is inside one transaction.
+    /// </summary>
+    public int ImportExcel(DataTable sheet, string destination, bool createTable)
+    {
+        if (sheet.Rows.Count == 0 || sheet.Columns.Count == 0)
+            throw new InvalidOperationException("The selected Excel worksheet contains no importable data.");
+        if (destination.Length is < 1 or > 64 ||
+            destination.StartsWith("MSys", StringComparison.OrdinalIgnoreCase) ||
+            destination.Contains(']') || destination.Contains('\0'))
+            throw new InvalidOperationException("Choose a valid MDB table name (1 to 64 characters).");
+
+        var existing = ListTables();
+        if (createTable && existing.Contains(destination, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("A table with this name already exists.");
+        if (!createTable && !existing.Contains(destination, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The destination MDB table no longer exists.");
+
+        // Prepare source columns and values without mutating the database.
+        DataTable? destinationSchema = createTable ? null : LoadPage(destination, 0, 1).Rows;
+        DataColumn[] destinations = createTable
+            ? sheet.Columns.Cast<DataColumn>().ToArray()
+            : sheet.Columns.Cast<DataColumn>()
+                .Select(source => destinationSchema!.Columns.Cast<DataColumn>()
+                    .FirstOrDefault(col => string.Equals(col.ColumnName, source.ColumnName,
+                        StringComparison.OrdinalIgnoreCase)))
+                .Where(col => col is not null && !col.AutoIncrement && !col.ReadOnly &&
+                    string.IsNullOrEmpty(col.Expression))
+                .Cast<DataColumn>()
+                .ToArray();
+
+        if (destinations.Length == 0)
+            throw new InvalidOperationException(
+                "No Excel column headings match writable columns in this MDB table. " +
+                "Rename your Excel headers to match database field names, then retry.");
+        if (createTable && sheet.Columns.Contains("_MDBStudioID"))
+            throw new InvalidOperationException(
+                "The Excel column '_MDBStudioID' is reserved for new-table AutoNumber keys. Rename that header.");
+        var sources = destinations.Select(dest =>
+            sheet.Columns.Cast<DataColumn>().First(col =>
+                string.Equals(col.ColumnName, dest.ColumnName, StringComparison.OrdinalIgnoreCase))).ToArray();
+
+        // Reject conversion failures before creating a backup or transaction.
+        var values = new List<object?[]>(sheet.Rows.Count);
+        for (int i = 0; i < sheet.Rows.Count; i++)
+        {
+            DataRow row = sheet.Rows[i];
+            var items = new object?[destinations.Length];
+            for (int c = 0; c < destinations.Length; c++)
+            {
+                string text = Convert.ToString(row[sources[c]], CultureInfo.InvariantCulture) ?? "";
+                try { items[c] = createTable ? text : ConvertImportValue(text, destinations[c]); }
+                catch (Exception ex) when (ex is FormatException or OverflowException or InvalidCastException)
+                {
+                    throw new InvalidOperationException(
+                        $"Excel row {i + 2}, column '{sources[c].ColumnName}' is invalid for " +
+                        $"'{destinations[c].ColumnName}': {ex.Message}", ex);
+                }
+            }
+            values.Add(items);
+        }
+
+        // Back up each import, even when the session already saved edits earlier.
+        Backup();
+        using var conn = Open();
+        using var transaction = conn.BeginTransaction();
+        try
+        {
+            if (createTable)
+            {
+                string tableDefinition = QuoteName("_MDBStudioID") + " COUNTER PRIMARY KEY, " +
+                    string.Join(", ", destinations.Select(c => QuoteName(c.ColumnName) + " MEMO"));
+                using var create = new OleDbCommand(
+                    "CREATE TABLE " + QuoteName(destination) + " (" + tableDefinition + ")", conn, transaction);
+                create.ExecuteNonQuery();
+            }
+
+            string insert = "INSERT INTO " + QuoteName(destination) + " (" +
+                string.Join(", ", destinations.Select(c => QuoteName(c.ColumnName))) +
+                ") VALUES (" + string.Join(", ", destinations.Select(_ => "?")) + ")";
+            using var command = new OleDbCommand(insert, conn, transaction);
+            foreach (var col in destinations)
+                command.Parameters.Add(new OleDbParameter
+                {
+                    OleDbType = createTable ? OleDbType.LongVarWChar : ImportParameterType(col.DataType, col.MaxLength),
+                    Value = DBNull.Value
+                });
+
+            for (int r = 0; r < values.Count; r++)
+            {
+                for (int c = 0; c < destinations.Length; c++)
+                    command.Parameters[c].Value = values[r][c] ?? DBNull.Value;
+                try
+                {
+                    if (command.ExecuteNonQuery() != 1)
+                        throw new InvalidOperationException("Access did not insert exactly one record.");
+                }
+                catch (OleDbException ex)
+                {
+                    throw new InvalidOperationException(
+                        $"Access rejected imported Excel row {r + 2}. Check primary keys, " +
+                        "required fields, unique indexes and relationships. No rows were committed.\n" + ex.Message, ex);
+                }
+            }
+            transaction.Commit();
+            return values.Count;
+        }
+        catch
+        {
+            try { transaction.Rollback(); } catch { /* original error takes precedence */ }
+            throw;
+        }
+    }
+
+    private static OleDbType ImportParameterType(Type type, int length)
+    {
+        if (type == typeof(string)) return length < 0 || length > 255 ? OleDbType.LongVarWChar : OleDbType.VarWChar;
+        if (type == typeof(bool)) return OleDbType.Boolean;
+        if (type == typeof(DateTime)) return OleDbType.DBTimeStamp;
+        if (type == typeof(int)) return OleDbType.Integer;
+        if (type == typeof(short)) return OleDbType.SmallInt;
+        if (type == typeof(long)) return OleDbType.BigInt;
+        if (type == typeof(byte)) return OleDbType.UnsignedTinyInt;
+        if (type == typeof(decimal)) return OleDbType.Decimal;
+        if (type == typeof(double)) return OleDbType.Double;
+        if (type == typeof(float)) return OleDbType.Single;
+        if (type == typeof(Guid)) return OleDbType.Guid;
+        return OleDbType.Variant;
+    }
+
+    private static object ConvertImportValue(string input, DataColumn column)
+    {
+        Type type = column.DataType;
+        if (type == typeof(string))
+        {
+            if (column.MaxLength > -1 && input.Length > column.MaxLength)
+                throw new FormatException($"Text exceeds the {column.MaxLength}-character limit.");
+            return input;
+        }
+        if (input.Length == 0)
+        {
+            if (column.AllowDBNull) return DBNull.Value;
+            throw new FormatException("The destination column requires a value.");
+        }
+        if (type == typeof(bool))
+            return input == "1" ? true : input == "0" ? false : bool.Parse(input);
+        if (type == typeof(DateTime))
+            return DateTime.Parse(input, CultureInfo.CurrentCulture);
+        if (type == typeof(Guid)) return Guid.Parse(input);
+        if (type == typeof(byte[]))
+            throw new FormatException("Binary Access columns cannot be imported from Excel.");
+        if (type == typeof(int)) return int.Parse(input, NumberStyles.Integer | NumberStyles.AllowThousands, CultureInfo.CurrentCulture);
+        if (type == typeof(long)) return long.Parse(input, NumberStyles.Integer | NumberStyles.AllowThousands, CultureInfo.CurrentCulture);
+        if (type == typeof(short)) return short.Parse(input, NumberStyles.Integer | NumberStyles.AllowThousands, CultureInfo.CurrentCulture);
+        if (type == typeof(byte)) return byte.Parse(input, NumberStyles.Integer, CultureInfo.CurrentCulture);
+        if (type == typeof(double)) return double.Parse(input, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.CurrentCulture);
+        if (type == typeof(decimal)) return decimal.Parse(input, NumberStyles.Number, CultureInfo.CurrentCulture);
+        if (type == typeof(float)) return float.Parse(input, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.CurrentCulture);
+        throw new FormatException($"The database field type '{type.Name}' is not supported for Excel import.");
+    }
+
     public int Save(DataTable table)
     {
         var modified = table.Rows.Cast<DataRow>().Where(row =>
