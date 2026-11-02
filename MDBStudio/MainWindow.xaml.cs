@@ -378,7 +378,7 @@ public partial class MainWindow : Window
             try
             {
                 // File and database work happen off the UI thread.
-                int imported = await Task.Run(() => currentSession.ImportExcel(data, target, create));
+                int imported = await Task.Run(() => currentSession.ImportSpreadsheet(data, target, create));
                 var names = currentSession.ListTables();
                 _allTables = names;
                 _suppressSelection = true;
