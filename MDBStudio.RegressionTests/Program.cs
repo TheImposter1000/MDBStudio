@@ -20,6 +20,9 @@ internal static class Program
         TestDeleteRequiresPrimaryKey();
         TestExcelQueryExportAndImport();
         TestExcelFileRejections();
+        TestCsvQuotedImportAndExport();
+        TestCsvMalformedRows();
+        TestCsvFormulaEscaping();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -281,6 +284,86 @@ internal static class Program
             throw new Exception("Exporting a query without column definitions should be rejected.");
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("SELECT query")) { }
+    }
+
+    private static void TestCsvQuotedImportAndExport()
+    {
+        string filename = Path.Combine(Path.GetTempPath(),
+            "MDBStudio-Csv-" + Guid.NewGuid().ToString("N") + ".csv");
+        try
+        {
+            // Quoted comma, embedded quote, embedded newline, UTF-8 and leading zeros.
+            File.WriteAllText(filename,
+                "UID,Recordname,Comment\r\n" +
+                "000012,\"RSPW, Cup001\",\"Said \"\"hello\"\"\"\r\n" +
+                "000013,RSPWHayate Cup002,\"Line one\nLine two\"\r\n" +
+                "000014,水星,Text\r\n", new System.Text.UTF8Encoding(true));
+
+            var table = CsvTransfer.ReadFile(filename);
+            Check(table.Rows.Count == 3 && table.Columns.Count == 3,
+                "CSV should preserve the expected number of records and columns.");
+            Check((string)table.Rows[0]["UID"] == "000012",
+                "Import must preserve leading zeros in CSV identifiers.");
+            Check((string)table.Rows[0]["Recordname"] == "RSPW, Cup001",
+                "Import must correctly read commas within quotes.");
+            Check((string)table.Rows[0]["Comment"] == "Said \"hello\"",
+                "Import must unescape doubled quotes.");
+            Check((string)table.Rows[1]["Comment"] == "Line one\nLine two",
+                "Import must correctly read multiline quoted CSV fields.");
+            Check((string)table.Rows[2]["Recordname"] == "水星",
+                "Import must preserve UTF-8 Unicode.");
+
+            string export = Path.Combine(Path.GetTempPath(),
+                "MDBStudio-Csv-Export-" + Guid.NewGuid().ToString("N") + ".csv");
+            try
+            {
+                CsvTransfer.ExportQuery(table, export);
+                var roundtrip = CsvTransfer.ReadFile(export);
+                Check(roundtrip.Rows.Count == table.Rows.Count, "Query export should preserve CSV row count.");
+                Check((string)roundtrip.Rows[0]["UID"] == "000012" &&
+                      (string)roundtrip.Rows[1]["Comment"] == "Line one\nLine two",
+                    "Query export must round-trip quoted CSV data.");
+            }
+            finally { try { File.Delete(export); } catch { } }
+        }
+        finally { try { File.Delete(filename); } catch { } }
+    }
+
+    private static void TestCsvMalformedRows()
+    {
+        string file = Path.Combine(Path.GetTempPath(),
+            "MDBStudio-Csv-Invalid-" + Guid.NewGuid().ToString("N") + ".csv");
+        try
+        {
+            File.WriteAllText(file, "A,B\r\none,two\r\nonlyone\r\n");
+            try
+            {
+                CsvTransfer.ReadFile(file);
+                throw new Exception("CSV import with missing columns should fail.");
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("fields; expected")) { }
+        }
+        finally { try { File.Delete(file); } catch { } }
+    }
+
+    private static void TestCsvFormulaEscaping()
+    {
+        string file = Path.Combine(Path.GetTempPath(),
+            "MDBStudio-Csv-Formula-" + Guid.NewGuid().ToString("N") + ".csv");
+        try
+        {
+            var data = new DataTable("Results");
+            data.Columns.Add("Value", typeof(string));
+            data.Columns.Add("Amount", typeof(int));
+            data.Rows.Add("=HYPERLINK(\"https://example.com\", \"x\")", -7);
+            CsvTransfer.ExportQuery(data, file);
+            var imported = CsvTransfer.ReadFile(file);
+            Check(((string)imported.Rows[0]["Value"]).StartsWith("'="),
+                "CSV export must neutralize spreadsheet formula-like text.");
+            Check((string)imported.Rows[0]["Amount"] == "-7",
+                "Negative numeric values must remain intact.");
+        }
+        finally { try { File.Delete(file); } catch { } }
     }
 
     private static void Check(bool condition, string failure)
