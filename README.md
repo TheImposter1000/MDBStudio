@@ -102,3 +102,11 @@ Earlier releases displayed an incorrect hardcoded `MDB Studio v1.1.1` badge even
 The updater now writes an installation and recovery log to `%LOCALAPPDATA%\MDBStudio\update.log`, including installation and restart status and errors. It does not record database contents or passwords. The app checks that it can write to its installation folder before closing to install an update. Windows-protected folders may require moving the portable app to a writable location. No antivirus bypass or automatic privilege elevation is attempted.
 
 v1.1.2 already included the fix to import native Access Yes/No values such as `-1`. The earlier static version badge could not establish whether that version actually installed. If the import still fails, use **Installation details** to verify the running executable and its location. Retest on a copy of the MDB database and do not bypass antivirus warnings.
+
+## TEW angle winner sentinel protection (v1.1.4)
+
+The `Victor` field in show history can hold a numeric worker winner ID for a match, or the numeric sentinel `-1` for an angle with no match winner. This is not the same semantic meaning as an Access Yes/No Boolean value. MDB Studio preserves `-1` as a signed integer when the existing destination field is numeric, whether `Int16` or `Int32`. Match winner IDs and other numeric values are also preserved.
+
+For an existing destination field named `Victor` that is actually defined as Yes/No (Boolean), MDB Studio rejects the angle sentinel with an actionable schema warning rather than silently converting it into `True`. A Yes/No field cannot faithfully store a numeric no-winner sentinel; select the correct existing numeric field or table. Other genuine Access Yes/No fields still accept `-1` as True and `0` as False.
+
+Regression tests cover CSV imports mixing angle and match rows, preservation of numeric Victor -1 and winner IDs, type mismatch rejection, and regular Access Boolean flags. This is a data integrity protection and does not change any original MDB table schema. As with all TEW database changes, test imports on a copy before importing into the working database.

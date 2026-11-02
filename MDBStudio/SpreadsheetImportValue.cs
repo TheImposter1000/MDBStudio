@@ -23,6 +23,22 @@ internal static class SpreadsheetImportValue
             if (column.AllowDBNull) return DBNull.Value;
             throw new FormatException("The destination column requires a value.");
         }
+        // TEW's Victor field is a numeric winner identifier. For angles,
+        // -1 is a sentinel meaning "no match winner", not Access True.
+        // If an unexpected destination defines Victor as Yes/No we must fail
+        // rather than silently corrupt those angle records.
+        if (type == typeof(bool) &&
+            string.Equals(column.ColumnName, "Victor", StringComparison.OrdinalIgnoreCase) &&
+            input.Trim() == "-1")
+        {
+            throw new FormatException(
+                "TEW angle records use Victor = -1 to mean no match winner. " +
+                "The destination Victor field is defined as Yes/No (Boolean), " +
+                "which cannot preserve the numeric -1 sentinel. " +
+                "Import into the correct numeric Victor field/table instead. " +
+                "No records have been imported.");
+        }
+
         if (type == typeof(bool)) return ParseAccessBoolean(input);
         if (type == typeof(DateTime))
             return DateTime.Parse(input, CultureInfo.CurrentCulture);

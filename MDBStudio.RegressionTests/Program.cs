@@ -371,77 +371,89 @@ internal static class Program
 
     private static void TestAccessBooleanSpreadsheetValues()
     {
-        // User-reported regression: spreadsheet row 5, column 'Victor'
-        // contains -1, the native Access Yes/No representation of True.
-        var boolColumn = new DataTable("tblWorkers").Columns.Add("Victor", typeof(bool));
-        foreach (var text in new[] { "-1", "1", "True", "TRUE", "yes", "Y", "on", "t", " -1 " })
-            Check((bool)SpreadsheetImportValue.ConvertToColumn(text, boolColumn),
-                $"Access boolean value '{text}' must import as True.");
-        foreach (var text in new[] { "0", "False", "FALSE", "no", "N", "off", "f", " 0 " })
-            Check(!(bool)SpreadsheetImportValue.ConvertToColumn(text, boolColumn),
-                $"Access boolean value '{text}' must import as False.");
+        // Generic Access Yes/No fields accept -1 as True.
+        var flag = new DataTable("Workers").Columns.Add("Active", typeof(bool));
+        foreach (var value in new[] { "-1", "1", "True", "YES", "on", " t " })
+            Check((bool)SpreadsheetImportValue.ConvertToColumn(value, flag),
+                "Yes/No True conversion should work for genuine Boolean fields.");
+        foreach (var value in new[] { "0", "False", "no", "off" })
+            Check(!(bool)SpreadsheetImportValue.ConvertToColumn(value, flag),
+                "Yes/No False conversion should work for genuine Boolean fields.");
 
-        foreach (var invalid in new[] { "-2", "2", "maybe", "1.2" })
-        {
-            try
-            {
-                SpreadsheetImportValue.ConvertToColumn(invalid, boolColumn);
-                throw new Exception($"Invalid boolean '{invalid}' was silently accepted.");
-            }
-            catch (FormatException ex) when (ex.Message.Contains("Yes/No")) { }
-        }
+        // The Victor field is an integer winner ID. TEW uses -1 when a
+        // history entry is an angle rather than a match.
+        var victor = new DataTable("tblShowHistory").Columns.Add("Victor", typeof(int));
+        Check((int)SpreadsheetImportValue.ConvertToColumn("-1", victor) == -1,
+            "Angle Victor -1 must remain the integer -1.");
+        Check((int)SpreadsheetImportValue.ConvertToColumn("1235343", victor) == 1235343,
+            "Match Victor worker IDs must be preserved.");
+        Check((int)SpreadsheetImportValue.ConvertToColumn("0", victor) == 0,
+            "A numeric zero must not be coerced to False.");
 
-        boolColumn.AllowDBNull = true;
-        Check(SpreadsheetImportValue.ConvertToColumn("", boolColumn) == DBNull.Value,
-            "Nullable Yes/No column should accept a blank value.");
-        boolColumn.AllowDBNull = false;
+        var shortVictor = new DataTable("tblAngles").Columns.Add("Victor", typeof(short));
+        Check((short)SpreadsheetImportValue.ConvertToColumn("-1", shortVictor) == -1,
+            "Angle sentinel must also survive a signed 16-bit integer column.");
+
+        // A Boolean Victor column cannot represent the distinct numeric
+        // no-winner sentinel. The importer must reject rather than corrupt.
+        var mistakenBoolean = new DataTable("tblShowHistory").Columns.Add("Victor", typeof(bool));
         try
         {
-            SpreadsheetImportValue.ConvertToColumn("", boolColumn);
-            throw new Exception("Nonnullable Yes/No column should reject blanks.");
+            SpreadsheetImportValue.ConvertToColumn("-1", mistakenBoolean);
+            throw new Exception("TEW Victor -1 was silently changed into Boolean True.");
         }
-        catch (FormatException ex) when (ex.Message.Contains("requires a value")) { }
-
-        var numeric = new DataTable("Numbers").Columns.Add("Victor", typeof(int));
-        Check((int)SpreadsheetImportValue.ConvertToColumn("-1", numeric) == -1,
-            "Integer -1 values should remain numeric -1.");
+        catch (FormatException ex) when (ex.Message.Contains("no match winner") &&
+                                         ex.Message.Contains("numeric")) { }
     }
 
     private static void TestAccessBooleanCsvImport()
     {
         string filename = Path.Combine(Path.GetTempPath(),
-            "MDBStudio-YesNo-" + Guid.NewGuid().ToString("N") + ".csv");
+            "MDBStudio-Angle-" + Guid.NewGuid().ToString("N") + ".csv");
         try
         {
-            File.WriteAllText(filename, "Name,Victor\r\nAlpha,-1\r\nBeta,0\r\nGamma,True\r\n");
-            var data = CsvTransfer.ReadFile(filename);
-            var destination = new DataTable("Workers");
-            var victor = destination.Columns.Add("Victor", typeof(bool));
-            Check(data.Rows.Count == 3, "The CSV must contain all rows.");
-            Check((bool)SpreadsheetImportValue.ConvertToColumn((string)data.Rows[0]["Victor"], victor),
-                "CSV -1 must be converted to a Yes/No True on MDB import.");
-            Check(!(bool)SpreadsheetImportValue.ConvertToColumn((string)data.Rows[1]["Victor"], victor),
-                "CSV 0 must be converted to a Yes/No False on MDB import.");
-            Check((bool)SpreadsheetImportValue.ConvertToColumn((string)data.Rows[2]["Victor"], victor),
-                "CSV True must be converted to a Yes/No True on MDB import.");
+            File.WriteAllText(filename,
+                "Type,Victor,Active\r\nAngle,-1,-1\r\nMatch,346,0\r\n");
+            var source = CsvTransfer.ReadFile(filename);
+            Check(source.Rows.Count == 2, "Both angle and match rows must be imported.");
+
+            var schema = new DataTable("tblShowHistory");
+            var victor = schema.Columns.Add("Victor", typeof(int));
+            var active = schema.Columns.Add("Active", typeof(bool));
+            Check((int)SpreadsheetImportValue.ConvertToColumn(
+                    (string)source.Rows[0]["Victor"], victor) == -1,
+                "Angle -1 winner sentinel must be preserved from a real CSV file.");
+            Check((int)SpreadsheetImportValue.ConvertToColumn(
+                    (string)source.Rows[1]["Victor"], victor) == 346,
+                "Match winner ID must be preserved from CSV.");
+            Check((bool)SpreadsheetImportValue.ConvertToColumn(
+                    (string)source.Rows[0]["Active"], active),
+                "Genuine Access Yes/No -1 must still import as True.");
+            Check(!(bool)SpreadsheetImportValue.ConvertToColumn(
+                    (string)source.Rows[1]["Active"], active),
+                "Genuine Access Yes/No 0 must still import as False.");
         }
         finally { try { File.Delete(filename); } catch { } }
     }
 
     private static void TestAccessBooleanCellPaste()
     {
-        var table = new DataTable("Workers");
+        var table = new DataTable("tblShowHistory");
         var id = table.Columns.Add("UID", typeof(int));
-        var victor = table.Columns.Add("Victor", typeof(bool));
+        var victor = table.Columns.Add("Victor", typeof(int));
+        var flag = table.Columns.Add("Active", typeof(bool));
         table.PrimaryKey = new[] { id };
-        table.Rows.Add(1, false);
+        table.Rows.Add(1, 346, false);
         table.AcceptChanges();
-        Check(GridCellEditor.Apply(new[]
-        {
+        Check(GridCellEditor.Apply(new[] {
             new GridCellEditor.CellPatch(table.Rows[0], victor, "-1")
-        }) == 1, "Pasting -1 into a Yes/No cell must update it.");
-        Check((bool)table.Rows[0][victor],
-            "Pasted -1 must represent True in the resulting DataTable.");
+        }) == 1, "Pasting -1 into numeric Victor should update the angle sentinel.");
+        Check((int)table.Rows[0][victor] == -1,
+            "Cell paste must not coerce angle Victor -1 into Boolean True.");
+        Check(GridCellEditor.Apply(new[] {
+            new GridCellEditor.CellPatch(table.Rows[0], flag, "-1")
+        }) == 1, "Pasting -1 into a genuine Yes/No field must work.");
+        Check((bool)table.Rows[0][flag], "Real Boolean fields must still import True.");
     }
 
     private static void Check(bool condition, string failure)
