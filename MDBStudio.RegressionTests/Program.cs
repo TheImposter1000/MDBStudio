@@ -17,7 +17,8 @@ internal static class Program
         TestTextClipboardRoundtrip();
         TestDeleteSelectedRecords();
         TestDeletePendingInsertedRecord();
-        TestDeleteRequiresPrimaryKey();
+        TestDeleteWithoutPrimaryKey();
+        TestKeylessDeletePredicateSafety();
         TestExcelQueryExportAndImport();
         TestExcelFileRejections();
         TestCsvQuotedImportAndExport();
@@ -222,18 +223,58 @@ internal static class Program
             "Deleting newly added record must preserve saved records.");
     }
 
-    private static void TestDeleteRequiresPrimaryKey()
+    private static void TestDeleteWithoutPrimaryKey()
     {
         var table = Example();
         table.PrimaryKey = Array.Empty<DataColumn>();
+        var first = table.Rows[0];
+        var second = table.Rows[1];
+        Check(RecordDeletion.Stage(table, new[] { first, first }) == 1,
+            "Delete must be available on keyless tables.");
+        Check(first.RowState == DataRowState.Deleted && second.RowState == DataRowState.Unchanged,
+            "Only selected rows should be staged, irrespective of the primary key.");
+    }
+
+    private static void TestKeylessDeletePredicateSafety()
+    {
+        var table = new DataTable("Keyless");
+        var uid = table.Columns.Add("Victor", typeof(int));
+        var shortText = table.Columns.Add("Recordname", typeof(string));
+        shortText.MaxLength = 80;
+        table.Columns.Add("LongNote", typeof(string));
+        table.Columns.Add("Attachment", typeof(byte[]));
+        var nullable = table.Columns.Add("Optional", typeof(int));
+        nullable.AllowDBNull = true;
+        table.Rows.Add(-1, "Angle001", "uncomparable text", new byte[] { 1 }, DBNull.Value);
+        table.Rows.Add(-1, "Angle001", "different long text", new byte[] { 2 }, DBNull.Value);
+        table.AcceptChanges();
+
+        var first = table.Rows[0];
+        var second = table.Rows[1];
+        var match = RecordDeletion.BuildKeylessMatch(first);
+        Check(match.Where.Contains("[Victor] = ?") &&
+              match.Where.Contains("[Recordname] = ?") &&
+              match.Where.Contains("[Optional] IS NULL"),
+            "Keyless matching should include numeric, short text and null fields.");
+        Check(!match.Where.Contains("LongNote") && !match.Where.Contains("Attachment"),
+            "Binary and long text should never be compared in Access WHERE clauses.");
+        Check(match.Parameters.Count == 2,
+            "Null predicates must not consume a positional OLE DB parameter.");
+        Check(RecordDeletion.SameKeylessValues(first, second, match.ComparedColumns),
+            "Rows identical across comparable fields must be treated as a duplicate group.");
+        second["Recordname"] = "Angle002";
+        Check(!RecordDeletion.SameKeylessValues(first, second, match.ComparedColumns),
+            "Distinct short text must not be grouped with a different record.");
+        var unsupported = new DataTable("OnlyLongText");
+        unsupported.Columns.Add("Memo", typeof(string));
+        var row = unsupported.Rows.Add("This long text cannot be used as an Access equality key.");
+        unsupported.AcceptChanges();
         try
         {
-            RecordDeletion.Stage(table, new[] { table.Rows[0] });
-            throw new Exception("Expected delete without a primary key to be rejected.");
+            RecordDeletion.BuildKeylessMatch(row);
+            throw new Exception("Unsafe no-key deletion should be rejected.");
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("primary key")) { }
-        Check(table.Rows[0].RowState == DataRowState.Unchanged,
-            "Unsupported deletion must leave all records unchanged.");
+        catch (InvalidOperationException ex) when (ex.Message.Contains("safely compare")) { }
     }
 
     private static void TestExcelQueryExportAndImport()
