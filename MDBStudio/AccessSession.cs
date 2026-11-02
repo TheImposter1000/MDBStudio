@@ -19,7 +19,7 @@ public sealed class DatabasePasswordRequiredException : InvalidOperationExceptio
 
 /// <summary>
 /// Local ACE OLE DB access. Identifiers are validated, record values are parameterized,
-/// and writes require a primary key and a backup of the original database.
+/// and writes require a backup; keyless tables support verified record deletion only.
 /// </summary>
 public sealed class AccessSession
 {
@@ -451,8 +451,11 @@ public sealed class AccessSession
             row.RowState is DataRowState.Added or DataRowState.Modified or DataRowState.Deleted).ToArray();
         if (modified.Length == 0) return 0;
 
-        if (table.PrimaryKey.Length == 0)
-            throw new InvalidOperationException("Editing is disabled for tables without a detectable primary key.");
+        if (table.PrimaryKey.Length == 0 &&
+            modified.Any(row => row.RowState != DataRowState.Deleted))
+            throw new InvalidOperationException(
+                "Tables without a primary key support record deletion only. " +
+                "Editing and inserting records still require a primary key.");
 
         foreach (var row in modified.Where(r => r.RowState == DataRowState.Modified))
         {
@@ -472,10 +475,47 @@ public sealed class AccessSession
                 .Where(c => !c.AutoIncrement && !c.ReadOnly && string.IsNullOrEmpty(c.Expression))
                 .ToArray();
 
+            // In keyless tables, identical visible records must be deleted only
+            // when EVERY database row matching the predicate was selected.
+            // This is checked inside the same transaction as the DELETE.
+            var keylessProcessed = new HashSet<DataRow>();
+            var deleted = modified.Where(r => r.RowState == DataRowState.Deleted).ToArray();
             foreach (var row in modified.OrderBy(r =>
                 r.RowState == DataRowState.Deleted ? 0 :
                 r.RowState == DataRowState.Modified ? 1 : 2))
             {
+                if (row.RowState == DataRowState.Deleted && table.PrimaryKey.Length == 0)
+                {
+                    if (!keylessProcessed.Add(row)) continue;
+                    var match = RecordDeletion.BuildKeylessMatch(row);
+                    var sameSelected = deleted.Where(other => !keylessProcessed.Contains(other) &&
+                        RecordDeletion.SameKeylessValues(row, other, match.ComparedColumns)).ToArray();
+                    foreach (var same in sameSelected) keylessProcessed.Add(same);
+                    int expected = sameSelected.Length + 1;
+                    string filter = " FROM " + QuoteName(table.TableName) + " WHERE " + match.Where;
+                    using (var check = new OleDbCommand("SELECT COUNT(*)" + filter, conn, transaction))
+                    {
+                        foreach (var field in match.Parameters)
+                            AddParameter(check, field, row[field, DataRowVersion.Original]);
+                        long actual = Convert.ToInt64(check.ExecuteScalar(), CultureInfo.InvariantCulture);
+                        if (actual != expected)
+                            throw new DBConcurrencyException(
+                                "Cannot safely identify only the selected records in this table without a primary key. " +
+                                $"Selected {expected:N0} record(s), but {actual:N0} saved record(s) match their comparable field values. " +
+                                "The database has not been changed. Select every identical record or use a table with a unique identifier.");
+                    }
+                    using (var delete = new OleDbCommand("DELETE" + filter, conn, transaction))
+                    {
+                        foreach (var field in match.Parameters)
+                            AddParameter(delete, field, row[field, DataRowVersion.Original]);
+                        int affectedKeyless = delete.ExecuteNonQuery();
+                        if (affectedKeyless != expected)
+                            throw new DBConcurrencyException(
+                                "Record counts changed during deletion. All pending deletions were rolled back.");
+                        count += affectedKeyless;
+                    }
+                    continue;
+                }
                 using var command = new OleDbCommand { Connection = conn, Transaction = transaction };
                 DataColumn[] columns;
                 if (row.RowState == DataRowState.Deleted)
