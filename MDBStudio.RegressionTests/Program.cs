@@ -247,10 +247,12 @@ internal static class Program
         nullable.AllowDBNull = true;
         table.Rows.Add(-1, "Angle001", "uncomparable text", new byte[] { 1 }, DBNull.Value);
         table.Rows.Add(-1, "Angle001", "different long text", new byte[] { 2 }, DBNull.Value);
+        table.Rows.Add(-1, "Angle002", "other long text", new byte[] { 3 }, DBNull.Value);
         table.AcceptChanges();
 
         var first = table.Rows[0];
         var second = table.Rows[1];
+        var third = table.Rows[2];
         var match = RecordDeletion.BuildKeylessMatch(first);
         Check(match.Where.Contains("[Victor] = ?") &&
               match.Where.Contains("[Recordname] = ?") &&
@@ -263,8 +265,10 @@ internal static class Program
         Check(RecordDeletion.SameKeylessValues(first, second, match.ComparedColumns),
             "Rows identical across comparable fields must be treated as a duplicate group.");
         second["Recordname"] = "Angle002";
-        Check(!RecordDeletion.SameKeylessValues(first, second, match.ComparedColumns),
-            "Distinct short text must not be grouped with a different record.");
+        Check(RecordDeletion.SameKeylessValues(first, second, match.ComparedColumns),
+            "Unsaved edits must not change the original values used to identify saved records.");
+        Check(!RecordDeletion.SameKeylessValues(first, third, match.ComparedColumns),
+            "Distinct original short text must not be grouped with a different record.");
         var unsupported = new DataTable("OnlyLongText");
         unsupported.Columns.Add("Memo", typeof(string));
         var row = unsupported.Rows.Add("This long text cannot be used as an Access equality key.");
