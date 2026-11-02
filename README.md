@@ -118,3 +118,10 @@ MDB Studio now accepts numeric cells such as TEW `Victor = -1` even if previous 
 CSV export no longer prepends apostrophes to valid signed numeric **text literals**, such as `-1`. Spreadsheet formula injection protection still applies to expressions such as `=HYPERLINK(...)` and negative formulas such as `-SUM(...)`. Files exported by earlier MDB Studio versions that added an apostrophe to a negative numeric string can now be reimported into a numeric column. Genuine Access Yes/No fields still accept -1 as True; TEW's numeric Victor=-1 stays -1.
 
 Regression coverage includes Excel/CSV-style values, legacy quote-prefixed numbers, UTF-8/Unicode minus signs, numeric IDs, preserved text fields, malicious formula-like strings, error diagnostics, updater checksum validation and rollback. The actual user's spreadsheet has not been supplied for byte-by-byte verification, so test on a copy of the MDB database first.
+
+
+## Universal record deletion (v1.1.6)
+
+Delete Records is available for every opened table, including tables without a primary key. Select any cell or row header, use Delete Records or Ctrl+Delete, and confirm. Deletions stay pending until Save Changes; MDB Studio backs up the database before committing them. On keyless tables, normal cell editing and row insertion remain disabled.
+
+For a table without a primary key, MDB Studio builds a parameterized identity predicate from supported short text and scalar fields, including nullable values. Before each deletion, within the same transaction, it counts every stored record matching that predicate and requires that all matching records were explicitly selected. This prevents accidentally deleting additional identical records, including those on another page. If no safe predicate exists, or a matching duplicate was not selected, the entire save is rolled back and an explanatory error is shown. Long text and binary fields are excluded from identity predicates. No Access table schema is changed. Database constraints and relationships may still block deletion. Test on a backup of important TEW data.
