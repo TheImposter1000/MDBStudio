@@ -9,11 +9,12 @@
     <AssemblyName>MDBStudio</AssemblyName>
     <RootNamespace>MDBStudio</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
-    <Version>1.0.4</Version>
+    <Version>1.1.0</Version>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="System.Data.OleDb" Version="10.0.0" />
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
     <Resource Include="Assets\Logo.png" />
   </ItemGroup>
 </Project>
