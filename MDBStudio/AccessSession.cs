@@ -317,10 +317,10 @@ public sealed class AccessSession
     /// appending records to an existing table. A database backup is created
     /// immediately before import. Every INSERT is inside one transaction.
     /// </summary>
-    public int ImportExcel(DataTable sheet, string destination, bool createTable)
+    public int ImportSpreadsheet(DataTable sheet, string destination, bool createTable)
     {
         if (sheet.Rows.Count == 0 || sheet.Columns.Count == 0)
-            throw new InvalidOperationException("The selected Excel worksheet contains no importable data.");
+            throw new InvalidOperationException("The selected spreadsheet contains no importable data.");
         if (destination.Length is < 1 or > 64 ||
             destination.StartsWith("MSys", StringComparison.OrdinalIgnoreCase) ||
             destination.Contains(']') || destination.Contains('\0'))
@@ -347,11 +347,11 @@ public sealed class AccessSession
 
         if (destinations.Length == 0)
             throw new InvalidOperationException(
-                "No Excel column headings match writable columns in this MDB table. " +
-                "Rename your Excel headers to match database field names, then retry.");
+                "No Spreadsheet column headings match writable columns in this MDB table. " +
+                "Rename your spreadsheet headers to match database field names, then retry.");
         if (createTable && sheet.Columns.Contains("_MDBStudioID"))
             throw new InvalidOperationException(
-                "The Excel column '_MDBStudioID' is reserved for new-table AutoNumber keys. Rename that header.");
+                "The Spreadsheet column '_MDBStudioID' is reserved for new-table AutoNumber keys. Rename that header.");
         var sources = destinations.Select(dest =>
             sheet.Columns.Cast<DataColumn>().First(col =>
                 string.Equals(col.ColumnName, dest.ColumnName, StringComparison.OrdinalIgnoreCase))).ToArray();
@@ -369,7 +369,7 @@ public sealed class AccessSession
                 catch (Exception ex) when (ex is FormatException or OverflowException or InvalidCastException)
                 {
                     throw new InvalidOperationException(
-                        $"Excel row {i + 2}, column '{sources[c].ColumnName}' is invalid for " +
+                        $"spreadsheet row {i + 2}, column '{sources[c].ColumnName}' is invalid for " +
                         $"'{destinations[c].ColumnName}': {ex.Message}", ex);
                 }
             }
@@ -414,7 +414,7 @@ public sealed class AccessSession
                 catch (OleDbException ex)
                 {
                     throw new InvalidOperationException(
-                        $"Access rejected imported Excel row {r + 2}. Check primary keys, " +
+                        $"Access rejected imported spreadsheet row {r + 2}. Check primary keys, " +
                         "required fields, unique indexes and relationships. No rows were committed.\n" + ex.Message, ex);
                 }
             }
@@ -464,7 +464,7 @@ public sealed class AccessSession
             return DateTime.Parse(input, CultureInfo.CurrentCulture);
         if (type == typeof(Guid)) return Guid.Parse(input);
         if (type == typeof(byte[]))
-            throw new FormatException("Binary Access columns cannot be imported from Excel.");
+            throw new FormatException("Binary Access columns cannot be imported from a spreadsheet.");
         if (type == typeof(int)) return int.Parse(input, NumberStyles.Integer | NumberStyles.AllowThousands, CultureInfo.CurrentCulture);
         if (type == typeof(long)) return long.Parse(input, NumberStyles.Integer | NumberStyles.AllowThousands, CultureInfo.CurrentCulture);
         if (type == typeof(short)) return short.Parse(input, NumberStyles.Integer | NumberStyles.AllowThousands, CultureInfo.CurrentCulture);

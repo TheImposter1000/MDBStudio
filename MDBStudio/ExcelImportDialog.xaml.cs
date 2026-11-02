@@ -9,6 +9,7 @@ public partial class ExcelImportDialog : Window
 {
     private readonly string _fileName;
     private readonly IReadOnlyList<string> _tables;
+    private readonly bool _isCsv;
     private int _generation;
 
     public DataTable? SelectedSheet { get; private set; }
@@ -22,11 +23,14 @@ public partial class ExcelImportDialog : Window
         InitializeComponent();
         _fileName = filename;
         _tables = tables;
+        _isCsv = string.Equals(Path.GetExtension(filename), ".csv", StringComparison.OrdinalIgnoreCase);
         SourceLabel.Text = filename;
         NewTableBox.Text = DefaultName(Path.GetFileNameWithoutExtension(filename));
         TargetCombo.ItemsSource = new[] { "(Create a new MDB table)" }.Concat(tables).ToArray();
         TargetCombo.SelectedIndex = 0;
-        SheetCombo.ItemsSource = ExcelTransfer.Sheets(filename);
+        SheetCombo.ItemsSource = _isCsv
+            ? new[] { CsvTransfer.FileLabel }
+            : ExcelTransfer.Sheets(filename);
         if (SheetCombo.Items.Count > 0) SheetCombo.SelectedIndex = 0;
     }
 
@@ -46,10 +50,12 @@ public partial class ExcelImportDialog : Window
         int version = ++_generation;
         SelectedSheet = null;
         ImportButton.IsEnabled = false;
-        PreviewInfo.Text = "Reading Excel worksheet...";
+        PreviewInfo.Text = _isCsv ? "Reading CSV file..." : "Reading Excel worksheet...";
         try
         {
-            var data = await Task.Run(() => ExcelTransfer.ReadSheet(_fileName, name));
+            var data = await Task.Run(() => _isCsv
+                ? CsvTransfer.ReadFile(_fileName)
+                : ExcelTransfer.ReadSheet(_fileName, name));
             if (version != _generation) return;
             SelectedSheet = data;
             var preview = data.Clone();
@@ -63,7 +69,7 @@ public partial class ExcelImportDialog : Window
             if (version != _generation) return;
             PreviewGrid.ItemsSource = null;
             PreviewInfo.Text = "Unable to read worksheet: " + ex.Message;
-            MessageBox.Show(this, ex.Message, "Excel import", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, ex.Message, "Data import", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -106,11 +112,11 @@ public partial class ExcelImportDialog : Window
             return;
         }
         if (MessageBox.Show(this,
-            $"Import {SelectedSheet.Rows.Count:N0} rows from '{SelectedSheet.TableName}' " +
+            $"Import {SelectedSheet.Rows.Count:N0} rows from '{Path.GetFileName(_fileName)}' " +
             $"{(CreateNewTable ? "into a NEW table" : "into existing table")} '{destination}'?\n\n" +
             "MDB Studio will create a backup, then commit the import as one operation. " +
             "This action is separate from Save Changes. Continue?",
-            "Confirm Excel import", MessageBoxButton.YesNo, MessageBoxImage.Question,
+            "Confirm data import", MessageBoxButton.YesNo, MessageBoxImage.Question,
             MessageBoxResult.No) != MessageBoxResult.Yes)
             return;
         DialogResult = true;

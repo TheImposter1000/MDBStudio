@@ -15,6 +15,7 @@
     <Compile Include="../MDBStudio/GridCellEditor.cs" Link="GridCellEditor.cs"/>
     <Compile Include="../MDBStudio/RecordDeletion.cs" Link="RecordDeletion.cs"/>
     <Compile Include="../MDBStudio/ExcelTransfer.cs" Link="ExcelTransfer.cs"/>
+    <Compile Include="../MDBStudio/CsvTransfer.cs" Link="CsvTransfer.cs"/>
     <PackageReference Include="ClosedXML" Version="0.105.1"/>
   </ItemGroup>
 </Project>
