@@ -24,6 +24,11 @@ public partial class MainWindow : Window
     private IReadOnlyList<DataRow>? _rightClickSelection;
     private IReadOnlyList<DataGridCellInfo>? _rightClickCells;
     private bool _applyingCellChanges;
+    private readonly List<TableColumnFilter> _activeColumnFilters = new();
+    private int _filterSuggestionsGeneration;
+    private bool _syncingFilterControls;
+
+    private sealed record FilterChoice(TableFilterOperation Operation, string Label);
 
     public MainWindow()
     {
@@ -109,6 +114,8 @@ public partial class MainWindow : Window
             _session = next;
             _table = null;
             _currentName = null;
+            _activeColumnFilters.Clear();
+            ResetFilterControls();
             _pageIndex = 0;
             _totalRecords = 0;
             _suppressSelection = true;
@@ -159,14 +166,21 @@ public partial class MainWindow : Window
         LoadTable(name, 0);
     }
 
-    private void LoadTable(string name, int requestedPage)
+    private bool LoadTable(string name, int requestedPage)
     {
         try
         {
-            var page = _session!.LoadPage(name, requestedPage, _pageSize);
+            bool switchingTable = !string.Equals(_currentName, name, StringComparison.OrdinalIgnoreCase);
+            var page = _session!.LoadPage(name, requestedPage, _pageSize,
+                switchingTable ? Array.Empty<TableColumnFilter>() : _activeColumnFilters);
             var table = page.Rows;
             _table = table;
             _currentName = name;
+            if (switchingTable)
+            {
+                _activeColumnFilters.Clear();
+                PopulateFilterColumns(table);
+            }
             _pageIndex = page.PageIndex;
             _totalRecords = page.TotalRecords;
             RecordsGrid.ItemsSource = table.DefaultView;
@@ -185,9 +199,234 @@ public partial class MainWindow : Window
             KeyLabel.Text = writable ? "Edit enabled (primary key detected)" :
                 "Cell editing disabled (no primary key); record deletion is available.";
             UpdatePageControls(table.Rows.Count);
-            Status($"Loaded {table.Rows.Count:N0} rows from {name}. Total: {_totalRecords:N0}. No 2,000-row ceiling.");
+            RefreshFilterSummary();
+            Status(_activeColumnFilters.Count == 0
+                ? $"Loaded {table.Rows.Count:N0} rows from {name}. Total: {_totalRecords:N0}."
+                : $"Filtered {name}: {_totalRecords:N0} matching records across the entire database.");
+            return true;
         }
-        catch (Exception ex) { Error("Could not load table", ex); }
+        catch (Exception ex)
+        {
+            Error("Could not load table", ex);
+            return false;
+        }
+    }
+
+    private static FilterChoice[] ChoicesFor(DataColumn column)
+    {
+        var choices = new List<FilterChoice>();
+        if (column.DataType == typeof(string))
+        {
+            choices.Add(new(TableFilterOperation.Contains, "Contains"));
+            choices.Add(new(TableFilterOperation.StartsWith, "Starts with"));
+            choices.Add(new(TableFilterOperation.EndsWith, "Ends with"));
+        }
+        choices.Add(new(TableFilterOperation.Equals, "Equals"));
+        choices.Add(new(TableFilterOperation.NotEquals, "Does not equal"));
+        if (TableFilters.Supports(column, TableFilterOperation.GreaterThan))
+        {
+            choices.Add(new(TableFilterOperation.GreaterThan, "Greater than"));
+            choices.Add(new(TableFilterOperation.LessThan, "Less than"));
+        }
+        choices.Add(new(TableFilterOperation.IsBlank, "Is blank"));
+        choices.Add(new(TableFilterOperation.IsNotBlank, "Is not blank"));
+        return choices.ToArray();
+    }
+
+    private void ResetFilterControls()
+    {
+        _filterSuggestionsGeneration++;
+        _syncingFilterControls = true;
+        try
+        {
+            FilterColumnCombo.ItemsSource = null;
+            FilterColumnCombo.SelectedIndex = -1;
+            FilterColumnCombo.IsEnabled = false;
+            FilterOperationCombo.ItemsSource = null;
+            FilterOperationCombo.IsEnabled = false;
+            FilterValueCombo.ItemsSource = null;
+            FilterValueCombo.Text = "";
+            FilterValueCombo.IsEnabled = false;
+            ApplyColumnFilterButton.IsEnabled = false;
+            RemoveColumnFilterButton.IsEnabled = false;
+            ClearColumnFiltersButton.IsEnabled = false;
+            ActiveFiltersLabel.Text = "No active filters. Click a column header to choose a filter.";
+        }
+        finally { _syncingFilterControls = false; }
+    }
+
+    private void PopulateFilterColumns(DataTable table)
+    {
+        ResetFilterControls();
+        _syncingFilterControls = true;
+        try
+        {
+            FilterColumnCombo.ItemsSource = table.Columns.Cast<DataColumn>()
+                .Where(TableFilters.CanFilter)
+                .Select(column => column.ColumnName)
+                .ToArray();
+            FilterColumnCombo.IsEnabled = FilterColumnCombo.Items.Count > 0;
+        }
+        finally { _syncingFilterControls = false; }
+    }
+
+    private void RefreshFilterSummary()
+    {
+        if (ActiveFiltersLabel is null) return;
+        ActiveFiltersLabel.Text = _activeColumnFilters.Count == 0
+            ? "No active filters. Click any column header or select a header above."
+            : "Active across the whole table: " + string.Join("  |  ",
+                _activeColumnFilters.Select(f => f.ColumnName + " " +
+                    f.Operation.ToString() + (f.Operation is TableFilterOperation.IsBlank or
+                        TableFilterOperation.IsNotBlank ? "" : " " + f.Value)));
+        ClearColumnFiltersButton.IsEnabled = _activeColumnFilters.Count > 0;
+        RemoveColumnFilterButton.IsEnabled = FilterColumnCombo.SelectedItem is string name &&
+            _activeColumnFilters.Any(f => string.Equals(f.ColumnName, name,
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void FilterColumn_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingFilterControls || _table is null) return;
+        _filterSuggestionsGeneration++;
+        _syncingFilterControls = true;
+        try
+        {
+            FilterValueCombo.ItemsSource = null;
+            FilterValueCombo.Text = "";
+            if (FilterColumnCombo.SelectedItem is not string name ||
+                !_table.Columns.Contains(name))
+            {
+                FilterOperationCombo.ItemsSource = null;
+                FilterOperationCombo.IsEnabled = false;
+                FilterValueCombo.IsEnabled = false;
+                ApplyColumnFilterButton.IsEnabled = false;
+                return;
+            }
+
+            var column = _table.Columns[name]!;
+            var choices = ChoicesFor(column);
+            var current = _activeColumnFilters.FirstOrDefault(f =>
+                string.Equals(f.ColumnName, name, StringComparison.OrdinalIgnoreCase));
+            FilterOperationCombo.ItemsSource = choices;
+            FilterOperationCombo.IsEnabled = true;
+            FilterOperationCombo.SelectedItem = choices.FirstOrDefault(c =>
+                c.Operation == current?.Operation) ?? choices[0];
+            FilterValueCombo.Text = current?.Value ?? "";
+            FilterValueCombo.IsEnabled =
+                ((FilterChoice)FilterOperationCombo.SelectedItem).Operation is not
+                    (TableFilterOperation.IsBlank or TableFilterOperation.IsNotBlank);
+            ApplyColumnFilterButton.IsEnabled = true;
+        }
+        finally
+        {
+            _syncingFilterControls = false;
+            RefreshFilterSummary();
+        }
+
+        if (FilterColumnCombo.SelectedItem is string selected &&
+            _session is AccessSession session && _currentName is string tableName)
+        {
+            int version = _filterSuggestionsGeneration;
+            _ = LoadFilterSuggestionsAsync(session, tableName, selected, version);
+        }
+    }
+
+    private async Task LoadFilterSuggestionsAsync(
+        AccessSession session, string tableName, string column, int generation)
+    {
+        try
+        {
+            var options = await Task.Run(() => session.DistinctColumnValues(tableName, column));
+            if (generation != _filterSuggestionsGeneration || _session != session ||
+                _currentName != tableName ||
+                !string.Equals(FilterColumnCombo.SelectedItem as string, column, StringComparison.Ordinal))
+                return;
+            string typed = FilterValueCombo.Text;
+            FilterValueCombo.ItemsSource = options;
+            FilterValueCombo.Text = typed;
+        }
+        catch (Exception)
+        {
+            // Large/legacy Access columns may not support DISTINCT.
+            // Free-text value entry remains available regardless.
+        }
+    }
+
+    private void FilterOperation_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingFilterControls) return;
+        FilterValueCombo.IsEnabled = FilterOperationCombo.SelectedItem is FilterChoice choice &&
+            choice.Operation is not (TableFilterOperation.IsBlank or TableFilterOperation.IsNotBlank);
+    }
+
+    private void RecordsGrid_Sorting(object sender, DataGridSortingEventArgs e)
+    {
+        // Header click opens the filter controls rather than sorting one page only.
+        e.Handled = true;
+        var name = Convert.ToString(e.Column.Header);
+        if (!string.IsNullOrEmpty(name) && FilterColumnCombo.Items.Contains(name))
+        {
+            FilterColumnCombo.SelectedItem = name;
+            if (FilterValueCombo.IsEnabled) FilterValueCombo.Focus();
+        }
+    }
+
+    private void ApplyColumnFilter_Click(object sender, RoutedEventArgs e)
+    {
+        if (_session is null || _currentName is null || _table is null ||
+            FilterColumnCombo.SelectedItem is not string column ||
+            FilterOperationCombo.SelectedItem is not FilterChoice choice) return;
+
+        var next = _activeColumnFilters
+            .Where(f => !string.Equals(f.ColumnName, column, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        next.Add(new TableColumnFilter(column, choice.Operation, FilterValueCombo.Text));
+        try { TableFilters.Compile(_table.Columns, next); }
+        catch (Exception ex) when (ex is FormatException or InvalidOperationException)
+        {
+            Error("Invalid column filter", ex);
+            return;
+        }
+
+        if (!DiscardPending()) return;
+        var prior = _activeColumnFilters.ToArray();
+        _activeColumnFilters.Clear();
+        _activeColumnFilters.AddRange(next);
+        if (!LoadTable(_currentName, 0))
+        {
+            _activeColumnFilters.Clear();
+            _activeColumnFilters.AddRange(prior);
+        }
+        RefreshFilterSummary();
+    }
+
+    private void RemoveColumnFilter_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentName is null || FilterColumnCombo.SelectedItem is not string column ||
+            !_activeColumnFilters.Any(f =>
+                string.Equals(f.ColumnName, column, StringComparison.OrdinalIgnoreCase)) ||
+            !DiscardPending()) return;
+
+        var prior = _activeColumnFilters.ToArray();
+        _activeColumnFilters.RemoveAll(f => string.Equals(f.ColumnName, column,
+            StringComparison.OrdinalIgnoreCase));
+        if (!LoadTable(_currentName, 0))
+        {
+            _activeColumnFilters.Clear();
+            _activeColumnFilters.AddRange(prior);
+        }
+        RefreshFilterSummary();
+    }
+
+    private void ClearColumnFilters_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentName is null || _activeColumnFilters.Count == 0 || !DiscardPending()) return;
+        var prior = _activeColumnFilters.ToArray();
+        _activeColumnFilters.Clear();
+        if (!LoadTable(_currentName, 0))
+            _activeColumnFilters.AddRange(prior);
+        RefreshFilterSummary();
     }
 
     private void UpdatePageControls(int pageRows)
@@ -420,6 +659,8 @@ public partial class MainWindow : Window
                 TableList.ItemsSource = names;
                 TableList.SelectedItem = target;
                 _suppressSelection = false;
+                _activeColumnFilters.Clear();
+                _currentName = null; // Reload the destination with fresh filter controls.
                 LoadTable(target, 0);
                 Status($"Import complete: {imported:N0} records into {target}. MDB backup created.");
                 MessageBox.Show(this,
