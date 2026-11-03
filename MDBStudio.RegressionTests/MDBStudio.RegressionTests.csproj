@@ -17,6 +17,7 @@
     <Compile Include="../MDBStudio/ExcelTransfer.cs" Link="ExcelTransfer.cs"/>
     <Compile Include="../MDBStudio/CsvTransfer.cs" Link="CsvTransfer.cs"/>
     <Compile Include="../MDBStudio/SpreadsheetImportValue.cs" Link="SpreadsheetImportValue.cs"/>
+    <Compile Include="../MDBStudio/TableFilters.cs" Link="TableFilters.cs"/>
     <PackageReference Include="ClosedXML" Version="0.105.1"/>
   </ItemGroup>
 </Project>
