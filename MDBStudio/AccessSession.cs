@@ -124,13 +124,20 @@ public sealed class AccessSession
     /// No fixed record ceiling: paging prevents large MDBs from exhausting UI memory.
     /// Pages are ordered by the table primary key where one is available.
     /// </summary>
-    public TablePage LoadPage(string name, int pageIndex = 0, int pageSize = DefaultPageSize)
+    public TablePage LoadPage(string name, int pageIndex = 0, int pageSize = DefaultPageSize,
+        IReadOnlyList<TableColumnFilter>? filters = null)
     {
         if (pageIndex < 0 || pageSize < 0)
             throw new ArgumentOutOfRangeException(nameof(pageIndex), "Page index and page size cannot be negative.");
 
         using var conn = Open();
-        using var countCommand = new OleDbCommand("SELECT COUNT(*) FROM " + QuoteName(name), conn);
+        var compiled = filters is { Count: > 0 }
+            ? TableFilters.Compile(ReadSchema(conn, name).Columns, filters)
+            : new CompiledTableFilters("", Array.Empty<FilterParameter>());
+        using var countCommand = new OleDbCommand(
+            "SELECT COUNT(*) FROM " + QuoteName(name) + compiled.WhereClause, conn);
+        foreach (var parameter in compiled.Parameters)
+            AddParameter(countCommand, parameter.Column, parameter.Value);
         long total = Convert.ToInt64(countCommand.ExecuteScalar(), CultureInfo.InvariantCulture);
 
         if (pageSize == 0) pageIndex = 0;
@@ -147,9 +154,12 @@ public sealed class AccessSession
         var primaryKeyNames = FindPrimaryKeys(conn, name);
         string orderBy = primaryKeyNames.Count == 0 ? "" : " ORDER BY " +
             string.Join(", ", primaryKeyNames.Select(QuoteName));
-        string sql = "SELECT * FROM " + QuoteName(name) + orderBy;
+        string sql = "SELECT * FROM " + QuoteName(name) + compiled.WhereClause + orderBy;
 
-        using var adapter = new OleDbDataAdapter(sql, conn)
+        using var selectCommand = new OleDbCommand(sql, conn);
+        foreach (var parameter in compiled.Parameters)
+            AddParameter(selectCommand, parameter.Column, parameter.Value);
+        using var adapter = new OleDbDataAdapter(selectCommand)
         {
             MissingSchemaAction = MissingSchemaAction.AddWithKey
         };
@@ -170,6 +180,65 @@ public sealed class AccessSession
                 table.PrimaryKey = columns;
         }
         return new TablePage(table, total, pageIndex, pageSize);
+    }
+
+    private static DataTable ReadSchema(OleDbConnection conn, string name)
+    {
+        using var command = new OleDbCommand(
+            "SELECT * FROM " + QuoteName(name) + " WHERE 1=0", conn);
+        using var adapter = new OleDbDataAdapter(command);
+        var schema = new DataTable(name) { Locale = CultureInfo.InvariantCulture };
+        adapter.FillSchema(schema, SchemaType.Source);
+        return schema;
+    }
+
+    /// <summary>
+    /// Returns a capped set of real column values to populate the filter picker.
+    /// Queries the whole MDB table rather than only the visible page. The user
+    /// can type a value when the distinct list is too large or cannot be grouped.
+    /// </summary>
+    public IReadOnlyList<string> DistinctColumnValues(string tableName, string columnName, int maximum = 250)
+    {
+        if (maximum is < 1 or > 500)
+            throw new ArgumentOutOfRangeException(nameof(maximum));
+        using var conn = Open();
+        var schema = ReadSchema(conn, tableName);
+        if (!schema.Columns.Contains(columnName))
+            throw new InvalidOperationException("The requested filter column does not exist.");
+        var column = schema.Columns[columnName]!;
+        if (!TableFilters.CanFilter(column))
+            return Array.Empty<string>();
+        if (column.DataType == typeof(string) && column.MaxLength < 0)
+            return Array.Empty<string>(); // Access MEMO/LONGTEXT cannot be DISTINCT sorted.
+
+        string field = QuoteName(column.ColumnName);
+        try
+        {
+            using var cmd = new OleDbCommand(
+                "SELECT DISTINCT TOP " + maximum.ToString(CultureInfo.InvariantCulture) +
+                " " + field + " FROM " + QuoteName(tableName) +
+                " WHERE " + field + " IS NOT NULL ORDER BY " + field, conn);
+            using var reader = cmd.ExecuteReader();
+            var result = new List<string>();
+            while (reader is not null && reader.Read())
+            {
+                if (reader.IsDBNull(0)) continue;
+                object value = reader.GetValue(0);
+                string label = value switch
+                {
+                    DateTime d => d.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                    bool b => b ? "True" : "False",
+                    _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? ""
+                };
+                if (label.Length != 0) result.Add(label);
+            }
+            return result;
+        }
+        catch (OleDbException)
+        {
+            // ACE cannot sort every legacy/complex field type. Manual input works.
+            return Array.Empty<string>();
+        }
     }
 
     private static IReadOnlyList<string> FindPrimaryKeys(OleDbConnection conn, string name)

@@ -202,6 +202,31 @@
                   <TextBox x:Name="RecordSearchBox" TextChanged="RecordSearch_TextChanged" ToolTip="Search text columns on the current page"/>
                 </StackPanel>
               </Grid>
+              <Border DockPanel.Dock="Top" Background="#F1F7FF" BorderBrush="#D8E6F5"
+                      BorderThickness="1" CornerRadius="8" Padding="11,9" Margin="0,0,0,10">
+                <StackPanel>
+                  <WrapPanel VerticalAlignment="Center">
+                    <TextBlock Text="Filter column" Foreground="#264D7A" FontWeight="SemiBold"
+                               FontSize="12" VerticalAlignment="Center" Margin="0,0,9,0"/>
+                    <ComboBox x:Name="FilterColumnCombo" Width="190" IsEnabled="False" Margin="0,0,9,0"
+                              SelectionChanged="FilterColumn_SelectionChanged"
+                              ToolTip="Choose any database column, or click a grid header to select it"/>
+                    <ComboBox x:Name="FilterOperationCombo" Width="137" IsEnabled="False" Margin="0,0,9,0"
+                              DisplayMemberPath="Label" SelectionChanged="FilterOperation_SelectionChanged"/>
+                    <ComboBox x:Name="FilterValueCombo" Width="235" IsEnabled="False" IsEditable="True"
+                              IsTextSearchEnabled="True" Margin="0,0,9,0"
+                              ToolTip="Select a suggested value from the full table or type any value"/>
+                    <Button x:Name="ApplyColumnFilterButton" Style="{StaticResource BlueButton}"
+                            Content="Apply" IsEnabled="False" Click="ApplyColumnFilter_Click"/>
+                    <Button x:Name="RemoveColumnFilterButton" Style="{StaticResource ToolButton}"
+                            Content="Remove selected" IsEnabled="False" Click="RemoveColumnFilter_Click"/>
+                    <Button x:Name="ClearColumnFiltersButton" Style="{StaticResource ToolButton}"
+                            Content="Clear all" IsEnabled="False" Click="ClearColumnFilters_Click"/>
+                  </WrapPanel>
+                  <TextBlock x:Name="ActiveFiltersLabel" Text="No active filters. Click a column header to choose a filter."
+                             Margin="2,7,0,0" FontSize="11" Foreground="#526D8B" TextWrapping="Wrap"/>
+                </StackPanel>
+              </Border>
               <Border DockPanel.Dock="Bottom" Background="#F7FAFE" CornerRadius="8" Padding="12,8">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                   <TextBlock Text="Rows per page" VerticalAlignment="Center" FontSize="11" Foreground="#536A87" Margin="0,0,8,0"/>
@@ -218,7 +243,8 @@
               </Border>
               <DataGrid x:Name="RecordsGrid" AutoGenerateColumns="True" CanUserAddRows="False"
                         CanUserDeleteRows="False" IsReadOnly="True" SelectionUnit="CellOrRowHeader" SelectionMode="Extended"
-                        SelectedCellsChanged="RecordsSelection_Changed" PreviewKeyDown="RecordsGrid_PreviewKeyDown"
+                        SelectedCellsChanged="RecordsSelection_Changed" Sorting="RecordsGrid_Sorting"
+                        PreviewKeyDown="RecordsGrid_PreviewKeyDown"
                         PreviewMouseRightButtonDown="RecordsGrid_PreviewMouseRightButtonDown"
                         Background="White" FontSize="12">
                 <DataGrid.ContextMenu>
