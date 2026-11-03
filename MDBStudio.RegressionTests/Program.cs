@@ -30,8 +30,112 @@ internal static class Program
         TestNumericClipboardAndLegacyCsvEscapes();
         TestSignedNumericCsvExportRoundtrip();
         TestNumericImportDiagnostics();
+        TestColumnFilters();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
+    }
+
+    private static void TestColumnFilters()
+    {
+        var table = new DataTable("tblShowHistory");
+        var company = table.Columns.Add("Company", typeof(string));
+        company.MaxLength = 80;
+        var name = table.Columns.Add("WorkerName", typeof(string));
+        name.MaxLength = 100;
+        var winner = table.Columns.Add("Victor", typeof(int));
+        var showDate = table.Columns.Add("EventDate", typeof(DateTime));
+        table.Columns.Add("Active", typeof(bool));
+        table.Columns.Add("MemoBlob", typeof(byte[]));
+
+        var criteria = new[]
+        {
+            new TableColumnFilter("Company", TableFilterOperation.Contains, "DNA"),
+            new TableColumnFilter("WorkerName", TableFilterOperation.StartsWith, "Jayden"),
+            new TableColumnFilter("Victor", TableFilterOperation.Equals, "-1"),
+            new TableColumnFilter("EventDate", TableFilterOperation.IsBlank, "")
+        };
+        var query = TableFilters.Compile(table.Columns, criteria);
+        Check(query.WhereClause.Contains("InStr(1, [Company], ?, 1) > 0"),
+            "Contains must use a parameterized case-insensitive Access search.");
+        Check(query.WhereClause.Contains("InStr(1, [WorkerName], ?, 1) = 1"),
+            "Starts with must search the whole source table.");
+        Check(query.WhereClause.Contains("[Victor] = ?") &&
+              query.WhereClause.Contains("[EventDate] IS NULL"),
+            "Numeric and missing-value filters must have correct SQL conditions.");
+        Check(query.Parameters.Count == 3 &&
+              (string)query.Parameters[0].Value == "DNA" &&
+              (string)query.Parameters[1].Value == "Jayden" &&
+              (int)query.Parameters[2].Value == -1,
+            "Parameter types and order must be preserved, including TEW Victor=-1.");
+
+        var textAttack = TableFilters.Compile(table.Columns, new[]
+        {
+            new TableColumnFilter("Company", TableFilterOperation.Contains,
+                "' OR 1=1 --")
+        });
+        Check(!textAttack.WhereClause.Contains("1=1") &&
+              (string)textAttack.Parameters[0].Value == "' OR 1=1 --",
+            "Filter values must be parameters, not SQL fragments.");
+
+        var suffix = TableFilters.Compile(table.Columns, new[]
+        {
+            new TableColumnFilter("WorkerName", TableFilterOperation.EndsWith, "Cole")
+        });
+        Check(suffix.Parameters.Count == 2 &&
+              suffix.WhereClause.Contains("Right([WorkerName], Len(?)) = ?"),
+            "Ends with must bind both positional parameters.");
+
+        var blank = TableFilters.Compile(table.Columns, new[]
+        {
+            new TableColumnFilter("Company", TableFilterOperation.IsBlank, "")
+        });
+        Check(blank.Parameters.Count == 0 &&
+              blank.WhereClause.Contains("[Company] = ''"),
+            "Blank text must match both NULL and empty text.");
+
+        try
+        {
+            TableFilters.Compile(table.Columns, new[]
+            {
+                new TableColumnFilter("Victor", TableFilterOperation.Contains, "1")
+            });
+            throw new Exception("Numeric columns must reject text-only operators.");
+        }
+        catch (InvalidOperationException) { }
+
+        try
+        {
+            TableFilters.Compile(table.Columns, new[]
+            {
+                new TableColumnFilter("MissingColumn", TableFilterOperation.Equals, "x")
+            });
+            throw new Exception("Unknown columns must not be injected into SQL.");
+        }
+        catch (InvalidOperationException) { }
+
+        try
+        {
+            TableFilters.Compile(table.Columns, new[]
+            {
+                new TableColumnFilter("MemoBlob", TableFilterOperation.Equals, "data")
+            });
+            throw new Exception("Binary columns must not be compared by SQL filters.");
+        }
+        catch (InvalidOperationException) { }
+
+        try
+        {
+            TableFilters.Compile(table.Columns, new[]
+            {
+                new TableColumnFilter("Company", TableFilterOperation.Equals, "DNA"),
+                new TableColumnFilter("Company", TableFilterOperation.Equals, "NWE")
+            });
+            throw new Exception("Duplicate column filters should not be silently applied.");
+        }
+        catch (InvalidOperationException) { }
+
+        Check(TableFilters.Compile(table.Columns, Array.Empty<TableColumnFilter>())
+              .WhereClause == "", "No active filters must return every database record.");
     }
 
     private static DataTable Example()
