@@ -31,6 +31,7 @@ public sealed partial class AccessSession
             throw new InvalidOperationException("The table no longer exists.");
 
         using var conn = Open();
+        EnsureNoRelationships(conn, name);
         using var count = new OleDbCommand(
             "SELECT COUNT(*) FROM " + AccessSchemaSql.Name(name), conn);
         long rows = Convert.ToInt64(count.ExecuteScalar(), CultureInfo.InvariantCulture);
@@ -119,6 +120,13 @@ public sealed partial class AccessSession
 
             // Reject a copied-file rewrite if it accidentally removes other
             // objects. If this happens it is safe: only the staging copy changed.
+            var expectedQueries = ListSavedQueries();
+            var stagedQueries = staging.ListSavedQueries();
+            if (!expectedQueries.SequenceEqual(stagedQueries,
+                StringComparer.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Verification failed: saved query objects changed on the temporary copy.");
+
             var expectedTables = ListTables();
             var stagedTables = staging.ListTables();
             if (!expectedTables.SequenceEqual(stagedTables,
@@ -148,6 +156,38 @@ public sealed partial class AccessSession
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }
             }
+        }
+    }
+
+    private static void EnsureNoRelationships(OleDbConnection connection, string table)
+    {
+        try
+        {
+            var foreignKeys = connection.GetOleDbSchemaTable(OleDbSchemaGuid.Foreign_Keys, null);
+            if (foreignKeys is null)
+                throw new InvalidOperationException(
+                    "The Access provider did not return relationship metadata. " +
+                    "Complete table redesign was cancelled to avoid losing constraints.");
+            foreach (DataRow row in foreignKeys.Rows)
+            {
+                string parent = foreignKeys.Columns.Contains("PK_TABLE_NAME")
+                    ? Convert.ToString(row["PK_TABLE_NAME"], CultureInfo.InvariantCulture) ?? ""
+                    : "";
+                string child = foreignKeys.Columns.Contains("FK_TABLE_NAME")
+                    ? Convert.ToString(row["FK_TABLE_NAME"], CultureInfo.InvariantCulture) ?? ""
+                    : "";
+                if (parent.Equals(table, StringComparison.OrdinalIgnoreCase) ||
+                    child.Equals(table, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException(
+                        "This table participates in a relationship. Redesign it using " +
+                        "supported individual field operations instead. MDB Studio will " +
+                        "not rebuild a linked table or remove a relationship automatically.");
+            }
+        }
+        catch (OleDbException ex)
+        {
+            throw new InvalidOperationException(
+                "Could not verify table relationships. No redesign has been applied.", ex);
         }
     }
 
