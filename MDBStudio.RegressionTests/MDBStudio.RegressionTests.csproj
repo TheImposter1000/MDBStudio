@@ -21,6 +21,7 @@
     <Compile Include="../MDBStudio/AccessSession.cs" Link="AccessSession.cs"/>
     <Compile Include="../MDBStudio/AccessSession.Schema.cs" Link="AccessSession.Schema.cs"/>
     <Compile Include="../MDBStudio/AccessSchemaSql.cs" Link="AccessSchemaSql.cs"/>
+    <Compile Include="../MDBStudio/VisualQuerySql.cs" Link="VisualQuerySql.cs"/>
     <Compile Include="../MDBStudio/AccessDatabaseCreator.cs" Link="AccessDatabaseCreator.cs"/>
     <Compile Include="../MDBStudio/WindowsFileAssociation.cs" Link="WindowsFileAssociation.cs"/>
     <PackageReference Include="ClosedXML" Version="0.105.1"/>
