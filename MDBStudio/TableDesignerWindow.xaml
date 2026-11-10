@@ -32,14 +32,14 @@
               AlternatingRowBackground="#EFF5FC" RowHeight="32"
               Background="White">
       <DataGrid.Columns>
-        <DataGridTextColumn Header="Field name" Width="*" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+        <DataGridTextColumn x:Name="FieldNameColumn" Header="Field name" Width="*" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
         <DataGridComboBoxColumn x:Name="FieldTypeColumn" Header="Data type" Width="180"
                                 SelectedItemBinding="{Binding Kind, UpdateSourceTrigger=PropertyChanged}"/>
         <DataGridTextColumn Header="Text length" Width="100"
                             Binding="{Binding Length, UpdateSourceTrigger=PropertyChanged}"/>
-        <DataGridCheckBoxColumn Header="Required" Width="90"
+        <DataGridCheckBoxColumn x:Name="RequiredColumn" Header="Required" Width="90"
                                 Binding="{Binding Required, UpdateSourceTrigger=PropertyChanged}"/>
-        <DataGridCheckBoxColumn Header="Primary key" Width="105"
+        <DataGridCheckBoxColumn x:Name="PrimaryKeyColumn" Header="Primary key" Width="105"
                                 Binding="{Binding PrimaryKey, UpdateSourceTrigger=PropertyChanged}"/>
       </DataGrid.Columns>
     </DataGrid>
