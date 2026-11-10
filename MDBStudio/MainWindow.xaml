@@ -128,6 +128,10 @@
                   ToolTip="Create a new blank MDB or ACCDB database without overwriting existing files">
             <StackPanel><TextBlock Text="＋" FontSize="21" TextAlignment="Center"/><TextBlock Text="New database" FontSize="11"/></StackPanel>
           </Button>
+          <Button x:Name="SchemaButton" Style="{StaticResource ToolButton}" Click="ManageSchema_Click" IsEnabled="False"
+                  ToolTip="Create tables, design fields and primary keys, manage indexes and relationships">
+            <StackPanel><TextBlock Text="▤" FontSize="21" TextAlignment="Center"/><TextBlock Text="Tables &amp; fields" FontSize="11"/></StackPanel>
+          </Button>
           <Button x:Name="AssociateFilesButton" Style="{StaticResource ToolButton}" Click="AssociateFiles_Click"
                   ToolTip="Make MDB Studio available in Windows Open With, then choose it in Default Apps">
             <StackPanel><TextBlock Text="↗" FontSize="21" TextAlignment="Center"/><TextBlock Text="Open with setup" FontSize="11"/></StackPanel>
