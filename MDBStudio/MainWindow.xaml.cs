@@ -30,11 +30,13 @@ public partial class MainWindow : Window
 
     private sealed record FilterChoice(TableFilterOperation Operation, string Label);
 
-    public MainWindow()
+    public MainWindow(string? initialDatabase = null)
     {
         InitializeComponent();
         VersionLabel.Text = "MDB Studio " + InstalledVersion();
         Title = "MDB Studio " + InstalledVersion() + " | Database Workspace";
+        if (initialDatabase is not null)
+            Loaded += (_, _) => OpenDatabase(initialDatabase);
     }
 
     private static string InstalledVersion()
@@ -81,7 +83,6 @@ public partial class MainWindow : Window
 
     private void Open_Click(object sender, RoutedEventArgs e)
     {
-        if (!DiscardPending()) return;
         var dialog = new OpenFileDialog
         {
             Filter = "Access databases (*.mdb;*.accdb)|*.mdb;*.accdb",
@@ -89,16 +90,22 @@ public partial class MainWindow : Window
             Multiselect = false
         };
         if (dialog.ShowDialog(this) != true) return;
+        OpenDatabase(dialog.FileName);
+    }
+
+    private void OpenDatabase(string filePath)
+    {
+        if (!DiscardPending()) return;
         try
         {
             AccessSession next;
             try
             {
-                next = new AccessSession(dialog.FileName);
+                next = new AccessSession(filePath);
             }
             catch (DatabasePasswordRequiredException)
             {
-                var prompt = new DatabasePasswordDialog(Path.GetFileName(dialog.FileName))
+                var prompt = new DatabasePasswordDialog(Path.GetFileName(filePath))
                 {
                     Owner = this
                 };
@@ -108,7 +115,7 @@ public partial class MainWindow : Window
                     return;
                 }
                 // The password stays in this process and is never saved in settings or logs.
-                next = new AccessSession(dialog.FileName, prompt.EnteredPassword);
+                next = new AccessSession(filePath, prompt.EnteredPassword);
             }
             var names = next.ListTables();
             _session = next;
@@ -129,8 +136,8 @@ public partial class MainWindow : Window
             ExportQueryExcelButton.IsEnabled = false;
             ExportQueryCsvButton.IsEnabled = false;
             ImportExcelButton.IsEnabled = true;
-            FileLabel.Text = dialog.FileName;
-            DatabaseTitle.Text = Path.GetFileName(dialog.FileName);
+            FileLabel.Text = filePath;
+            DatabaseTitle.Text = Path.GetFileName(filePath);
             RecordSearchBox.Clear();
             TableLabel.Text = "Choose a table";
             KeyLabel.Text = "";
@@ -142,13 +149,63 @@ public partial class MainWindow : Window
             PageInfoLabel.Text = "Choose a table";
             UpdateActionStates();
             StatusRight.Text = "Database connected";
-            Status("Opened " + Path.GetFileName(dialog.FileName) + ". " + names.Count + " tables found.");
+            Status("Opened " + Path.GetFileName(filePath) + ". " + names.Count + " tables found.");
         }
         catch (Exception ex)
         {
             _suppressSelection = false;
             Error("Could not open database", ex);
         }
+    }
+
+    private void CreateDatabase_Click(object sender, RoutedEventArgs e)
+    {
+        if (!DiscardPending()) return;
+        var dialog = new SaveFileDialog
+        {
+            Title = "Create a blank Access database",
+            Filter = "Access MDB database (*.mdb)|*.mdb|Access ACCDB database (*.accdb)|*.accdb",
+            FileName = "NewDatabase.mdb",
+            DefaultExt = ".mdb",
+            AddExtension = true,
+            OverwritePrompt = false
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            string destination = AccessDatabaseCreator.Create(dialog.FileName);
+            OpenDatabase(destination);
+            // A newly created Access file intentionally has no user tables.
+            // Import Excel/CSV to create the first table.
+            if (_session is not null &&
+                string.Equals(_session.FilePath, destination, StringComparison.OrdinalIgnoreCase))
+                Status("Created " + Path.GetFileName(destination) +
+                       ". This database is empty; import Excel/CSV to add its first table.");
+        }
+        catch (Exception ex) { Error("Create database failed", ex); }
+    }
+
+    private void AssociateFiles_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string application = Environment.ProcessPath ??
+                Path.Combine(AppContext.BaseDirectory, "MDBStudio.exe");
+            WindowsFileAssociation.RegisterForCurrentUser(application);
+            var choice = MessageBox.Show(this,
+                "MDB Studio has been added as an available application for .mdb and .accdb files. " +
+                "It has not changed your current Windows default app.\n\n" +
+                "Open Windows Default Apps settings now? Choose MDB Studio for .mdb and .accdb. " +
+                "Afterward, double-clicking a database in File Explorer will open it in MDB Studio.",
+                "Open database files with MDB Studio",
+                MessageBoxButton.YesNo, MessageBoxImage.Information);
+            if (choice == MessageBoxResult.Yes)
+                Process.Start(new ProcessStartInfo(WindowsFileAssociation.DefaultAppsSettingsUri)
+                {
+                    UseShellExecute = true
+                });
+        }
+        catch (Exception ex) { Error("Could not register file associations", ex); }
     }
 
     private void TableList_SelectionChanged(object sender, SelectionChangedEventArgs e)

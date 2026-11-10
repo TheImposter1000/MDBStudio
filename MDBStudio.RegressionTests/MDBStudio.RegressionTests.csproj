@@ -18,6 +18,10 @@
     <Compile Include="../MDBStudio/CsvTransfer.cs" Link="CsvTransfer.cs"/>
     <Compile Include="../MDBStudio/SpreadsheetImportValue.cs" Link="SpreadsheetImportValue.cs"/>
     <Compile Include="../MDBStudio/TableFilters.cs" Link="TableFilters.cs"/>
+    <Compile Include="../MDBStudio/AccessSession.cs" Link="AccessSession.cs"/>
+    <Compile Include="../MDBStudio/AccessDatabaseCreator.cs" Link="AccessDatabaseCreator.cs"/>
+    <Compile Include="../MDBStudio/WindowsFileAssociation.cs" Link="WindowsFileAssociation.cs"/>
     <PackageReference Include="ClosedXML" Version="0.105.1"/>
+    <PackageReference Include="System.Data.OleDb" Version="10.0.0"/>
   </ItemGroup>
 </Project>

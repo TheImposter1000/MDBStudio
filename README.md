@@ -134,3 +134,12 @@ MDB Studio now offers full-table column filtering above the records grid. Click 
 Unlike the separate **Search displayed rows** text box, these column filters are evaluated by Microsoft ACE against the entire saved MDB table before pagination. Record counts and Next/Previous navigation use the filtered result, rather than searching only the visible page. Up to 250 distinct values are suggested from a supported column; for large text/complex fields, manually type a filter value. Filter expressions are parameterized, preserve numeric identifiers and TEW negative sentinel values, and do not modify MDB data. Applying or clearing filters checks for unsaved edits first and never discards them without confirmation.
 
 Filtering is separate from permanently sorting or grouping company records. The field names come from the currently opened table; MDB Studio does not infer foreign-key relationships or translate company IDs to display names automatically.
+
+
+## New database and double-click file opening (v1.1.8)
+
+Use **New database** to create a blank MDB (Jet 4) or ACCDB (Access 2007+) file. MDB Studio uses DAO or ADOX from the 64-bit Access Database Engine, validates the created file with ACE, and refuses to overwrite any existing file. It builds the new database at a temporary path, verifies it, then moves it into place. If DAO/ADOX are missing, creation fails with an explanatory message. Microsoft Access desktop is not required. A blank database contains no tables and is not a TEW IX game save; use **Import Excel/CSV** to create its first table.
+
+Double clicking a database in Windows Explorer now opens that file inside MDB Studio when it is selected as Windows' default handler. Use **Open with setup** to register MDB Studio as a supported application for MDB and ACCDB under the current user's account. Then select MDB Studio in Windows **Default Apps** or use **Open with** and choose **Always**. The registration does not change existing defaults automatically. If the app is moved to a different folder, run Open with setup again.
+
+Tests cover new file path validation, non-overwrite behavior, startup arguments, shell command quoting and existing application regressions. Actual database file creation requires the local Microsoft ACE/DAO runtime and has not been exercised on a Windows machine with that component.
