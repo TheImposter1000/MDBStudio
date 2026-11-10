@@ -31,6 +31,8 @@ internal static class Program
         TestSignedNumericCsvExportRoundtrip();
         TestNumericImportDiagnostics();
         TestColumnFilters();
+        TestNewDatabasePathSafety();
+        TestWindowsFileOpening();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -136,6 +138,62 @@ internal static class Program
 
         Check(TableFilters.Compile(table.Columns, Array.Empty<TableColumnFilter>())
               .WhereClause == "", "No active filters must return every database record.");
+    }
+
+    private static void TestNewDatabasePathSafety()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "MDBStudio-Create-Test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            foreach (string extension in new[] { ".mdb", ".accdb" })
+            {
+                string destination = Path.Combine(folder, "New Database" + extension);
+                Check(AccessDatabaseCreator.ValidateNewPath(destination) == destination,
+                    "Both Access database formats should be supported.");
+            }
+            string existing = Path.Combine(folder, "TEW9Save.mdb");
+            File.WriteAllText(existing, "DO NOT OVERWRITE");
+            try
+            {
+                AccessDatabaseCreator.ValidateNewPath(existing);
+                throw new Exception("Creation must refuse existing saves.");
+            }
+            catch (IOException ex) when (ex.Message.Contains("already exists")) { }
+            Check(File.ReadAllText(existing) == "DO NOT OVERWRITE",
+                "The existing save must remain untouched.");
+            try
+            {
+                AccessDatabaseCreator.ValidateNewPath(Path.Combine(folder, "Invalid.txt"));
+                throw new Exception("Unsupported types must be rejected.");
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains(".mdb")) { }
+            try
+            {
+                AccessDatabaseCreator.ValidateNewPath(Path.Combine(folder, "Missing", "database.mdb"));
+                throw new Exception("A missing folder must be rejected.");
+            }
+            catch (DirectoryNotFoundException) { }
+        }
+        finally { Directory.Delete(folder, recursive: true); }
+    }
+
+    private static void TestWindowsFileOpening()
+    {
+        string file = Path.Combine(Path.GetTempPath(), "TEW IX Saves", "TEW9Save.mdb");
+        string accdb = Path.Combine(Path.GetTempPath(), "database.accdb");
+        Check(WindowsFileAssociation.DatabasePathFromArguments(new[] { file }) == Path.GetFullPath(file),
+            "Explorer launch with MDB should open the specified file.");
+        Check(WindowsFileAssociation.DatabasePathFromArguments(new[] { accdb }) == Path.GetFullPath(accdb),
+            "Explorer launch with ACCDB should open the specified file.");
+        Check(WindowsFileAssociation.DatabasePathFromArguments(Array.Empty<string>()) is null &&
+              WindowsFileAssociation.DatabasePathFromArguments(new[] { file, accdb }) is null &&
+              WindowsFileAssociation.DatabasePathFromArguments(new[] { "unsupported.txt" }) is null,
+            "Other arguments must not open unrelated files.");
+        string exe = Path.Combine(Path.GetTempPath(), "MDB Studio", "MDBStudio.exe");
+        string command = WindowsFileAssociation.OpenCommand(exe);
+        Check(command == "\"" + Path.GetFullPath(exe) + "\" \"%1\"",
+            "Explorer command must quote executable and target file paths.");
     }
 
     private static DataTable Example()
