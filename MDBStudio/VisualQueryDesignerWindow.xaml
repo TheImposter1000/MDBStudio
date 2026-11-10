@@ -1,0 +1,80 @@
+<Window x:Class="MDBStudio.VisualQueryDesignerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MDB Studio | Visual Query Designer" Height="770" Width="1100"
+        MinHeight="625" MinWidth="920" Background="#F3F7FC"
+        WindowStartupLocation="CenterOwner" FontFamily="Segoe UI">
+  <DockPanel Margin="18">
+    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+      <TextBlock Text="Visual query designer" FontSize="23" FontWeight="SemiBold"
+                 Foreground="#174A83"/>
+      <TextBlock Text="Select tables and fields, define an optional join, set criteria and sort order, then run or save a read-only SELECT query."
+                 TextWrapping="Wrap" Foreground="#536E8C" Margin="0,5,0,12"/>
+      <WrapPanel Margin="0,0,0,10" VerticalAlignment="Center">
+        <TextBlock Text="Source table" VerticalAlignment="Center" Margin="0,0,7,0"/>
+        <ComboBox x:Name="SourceTableCombo" Width="190" Margin="0,0,14,0"
+                  SelectionChanged="SourceTableChanged"/>
+        <TextBlock Text="Join table" VerticalAlignment="Center" Margin="0,0,7,0"/>
+        <ComboBox x:Name="JoinTableCombo" Width="190" Margin="0,0,10,0"
+                  SelectionChanged="JoinTableChanged"/>
+        <ComboBox x:Name="JoinModeCombo" Width="140" Margin="0,0,10,0"/>
+        <CheckBox x:Name="DistinctCheck" Content="Unique rows (DISTINCT)"
+                  VerticalAlignment="Center" Margin="0,0,9,0"/>
+      </WrapPanel>
+      <WrapPanel Margin="0,0,0,10" VerticalAlignment="Center">
+        <TextBlock Text="Source key" VerticalAlignment="Center" Margin="0,0,7,0"/>
+        <ComboBox x:Name="SourceKeyCombo" Width="180" Margin="0,0,14,0"/>
+        <TextBlock Text="Join key" VerticalAlignment="Center" Margin="0,0,7,0"/>
+        <ComboBox x:Name="JoinKeyCombo" Width="180" Margin="0,0,12,0"/>
+        <TextBlock Text="Fields" VerticalAlignment="Center" Margin="0,0,7,0"/>
+        <ComboBox x:Name="AvailableFieldCombo" Width="240" DisplayMemberPath="Label"
+                  Margin="0,0,9,0"/>
+        <Button Content="Add field" Click="AddField_Click" Padding="11,7"/>
+      </WrapPanel>
+    </StackPanel>
+    <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+      <TextBlock Text="SQL preview" FontWeight="SemiBold" Foreground="#174A83" Margin="0,0,0,6"/>
+      <TextBox x:Name="SqlPreviewBox" Height="70" IsReadOnly="True"
+               TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+               FontFamily="Consolas" Padding="9" Background="White"/>
+      <WrapPanel Margin="0,12,0,0" VerticalAlignment="Center">
+        <TextBlock Text="Saved query" Margin="0,0,7,0" VerticalAlignment="Center"/>
+        <ComboBox x:Name="SavedQueriesCombo" Width="185" Margin="0,0,7,0"/>
+        <Button Content="Open saved query" Click="OpenSavedQuery_Click"
+                Padding="10,7" Margin="0,0,22,0"/>
+        <TextBlock Text="Save as" Margin="0,0,7,0" VerticalAlignment="Center"/>
+        <TextBox x:Name="SaveNameBox" Width="156" Padding="7,5" Margin="0,0,7,0"/>
+        <Button Content="Save query to MDB" Click="SaveQuery_Click"
+                Padding="10,7" Margin="0,0,12,0"/>
+        <Button Content="Preview SQL" Click="Preview_Click" Padding="11,7" Margin="0,0,9,0"/>
+        <Button Content="Run query" Click="Run_Click" Background="#0867D7" Foreground="White"
+                Padding="12,7" Margin="0,0,9,0"/>
+        <Button Content="Cancel" IsCancel="True" Padding="12,7"/>
+      </WrapPanel>
+      <TextBlock x:Name="StatusLabel" Text="Ready." Foreground="#537191"
+                 Margin="0,9,0,0" FontSize="11"/>
+    </StackPanel>
+    <DockPanel>
+      <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+        <TextBlock Text="Selected fields and criteria" FontWeight="SemiBold" Foreground="#174A83"
+                   VerticalAlignment="Center" Margin="0,0,15,0"/>
+        <Button Content="Remove selected field" Click="RemoveField_Click" Padding="8,6"/>
+      </StackPanel>
+      <DataGrid x:Name="DesignGrid" AutoGenerateColumns="False" CanUserAddRows="False"
+                CanUserDeleteRows="False" Background="White" FontSize="12"
+                HeadersVisibility="Column" RowHeight="31"
+                AlternatingRowBackground="#F1F6FD" SelectionUnit="FullRow">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="155" IsReadOnly="True"/>
+          <DataGridTextColumn Header="Field" Binding="{Binding Column}" Width="*" IsReadOnly="True"/>
+          <DataGridCheckBoxColumn Header="Show" Binding="{Binding Show, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
+          <DataGridComboBoxColumn x:Name="CriteriaColumn" Header="Criteria" Width="140"
+                                  SelectedItemBinding="{Binding Criteria, UpdateSourceTrigger=PropertyChanged}"/>
+          <DataGridTextColumn Header="Value" Binding="{Binding Value, UpdateSourceTrigger=PropertyChanged}" Width="180"/>
+          <DataGridComboBoxColumn x:Name="SortColumn" Header="Sort" Width="115"
+                                  SelectedItemBinding="{Binding Sort, UpdateSourceTrigger=PropertyChanged}"/>
+        </DataGrid.Columns>
+      </DataGrid>
+    </DockPanel>
+  </DockPanel>
+</Window>
