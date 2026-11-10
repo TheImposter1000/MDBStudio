@@ -103,15 +103,41 @@ public static class AccessDatabaseCreator
         }
         finally
         {
-            if (database is not null)
+            try
             {
-                try { ((dynamic)database).Close(); } finally { ReleaseCom(database); }
+                if (database is not null)
+                {
+                    try { ((dynamic)database).Close(); }
+                    finally { ReleaseCom(database); }
+                }
             }
-            ReleaseCom(engine);
+            finally { ReleaseCom(engine); }
         }
     }
 
     private static void CreateWithAdox(string file, string extension)
+    {
+        var errors = new List<string>();
+        foreach (string provider in new[] { "Microsoft.ACE.OLEDB.16.0", "Microsoft.ACE.OLEDB.12.0" })
+        {
+            try
+            {
+                CreateWithAdoxProvider(file, extension, provider);
+                return;
+            }
+            catch (Exception ex) when (ex is COMException or InvalidOperationException or
+                MissingMethodException or TypeLoadException or System.Reflection.TargetInvocationException)
+            {
+                errors.Add(provider + ": " + ex.Message);
+                if (File.Exists(file)) File.Delete(file);
+            }
+        }
+        throw new InvalidOperationException(
+            "ADOX could not create an Access database with either ACE provider. " +
+            string.Join(" | ", errors));
+    }
+
+    private static void CreateWithAdoxProvider(string file, string extension, string provider)
     {
         Type catalogType = Type.GetTypeFromProgID("ADOX.Catalog")
             ?? throw new InvalidOperationException("The ADOX Catalog component is not registered.");
@@ -122,7 +148,7 @@ public static class AccessDatabaseCreator
         {
             var builder = new OleDbConnectionStringBuilder
             {
-                Provider = "Microsoft.ACE.OLEDB.16.0",
+                Provider = provider,
                 DataSource = file
             };
             builder["Jet OLEDB:Engine Type"] =
@@ -133,11 +159,15 @@ public static class AccessDatabaseCreator
         }
         finally
         {
-            if (connection is not null)
+            try
             {
-                try { ((dynamic)connection).Close(); } finally { ReleaseCom(connection); }
+                if (connection is not null)
+                {
+                    try { ((dynamic)connection).Close(); }
+                    finally { ReleaseCom(connection); }
+                }
             }
-            ReleaseCom(catalog);
+            finally { ReleaseCom(catalog); }
         }
     }
 
