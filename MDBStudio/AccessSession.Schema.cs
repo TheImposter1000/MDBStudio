@@ -130,10 +130,14 @@ public sealed partial class AccessSession
             c.Name.Equals(parentField, StringComparison.OrdinalIgnoreCase));
         if (childColumn is null || parentColumn is null)
             throw new InvalidOperationException("Both relationship fields must exist.");
-        if (!string.Equals(childColumn.DataType, parentColumn.DataType, StringComparison.OrdinalIgnoreCase))
+        static string RelatedType(string type) =>
+            type.Equals("AutoNumber", StringComparison.OrdinalIgnoreCase)
+                ? "Integer (32-bit)" : type;
+        if (!string.Equals(RelatedType(childColumn.DataType), RelatedType(parentColumn.DataType),
+                StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
-                "Relationship fields must have matching data types. " +
-                "The referenced field must also be a primary key or unique index.");
+                "Relationship fields must have matching data types (32-bit Integer is compatible " +
+                "with AutoNumber). The referenced field must also be a primary key or unique index.");
         ApplySchemaSql(sql);
     }
 
