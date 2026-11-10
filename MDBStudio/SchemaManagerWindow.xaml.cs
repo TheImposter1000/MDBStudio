@@ -89,6 +89,7 @@ public partial class SchemaManagerWindow : Window
     {
         AddFieldButton.IsEnabled = enabled;
         ChangeFieldButton.IsEnabled = enabled;
+        EditTableDesignButton.IsEnabled = enabled;
         DropFieldButton.IsEnabled = enabled;
         DeleteTableButton.IsEnabled = enabled;
         CreateIndexButton.IsEnabled = enabled;
@@ -152,6 +153,58 @@ public partial class SchemaManagerWindow : Window
             "Added " + field.Name + " to " + table + ".", table);
     }
 
+    private void EditTableDesign_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedTable is not string table) return;
+        try
+        {
+            // For empty tables we can safely rebuild the whole design on a
+            // staging database. A populated table must never be dropped.
+            long rows = _session.TableRecordCount(table);
+            if (rows != 0)
+            {
+                MessageBox.Show(this,
+                    "This table contains " + rows.ToString("N0") + " records. " +
+                    "Full table redesign is available only for empty tables, " +
+                    "because changing an AutoNumber or primary key can break existing records and relationships.\n\n" +
+                    "You can still add fields, change ordinary field types, and create indexes. " +
+                    "Your table has not been modified.",
+                    "Preserving existing records", MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            var schema = _session.InspectTable(table);
+            var designer = new TableDesignerWindow(
+                existingTable: table, redesignFields: schema.Columns)
+            {
+                Owner = this
+            };
+            if (designer.ShowDialog() != true) return;
+
+            EmptyTableRedesignPlan plan =
+                _session.PlanEmptyTableRedesign(table, designer.Definition);
+            string caution = "Apply the new design to EMPTY table '" + table + "'?\n\n" +
+                "Field names, data types, required flags, and the primary key may change. " +
+                "Existing indexes will be preserved where the new fields support them.\n\n" +
+                plan.Description + "\n\n" +
+                "MDB Studio will make a full database backup, apply the change only to " +
+                "a temporary database copy, and replace the original only after verification. " +
+                "If other tables or relationships prevent redesign, the original will remain unchanged.";
+
+            if (MessageBox.Show(this, caution, "Confirm complete table redesign",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                MessageBoxResult.No) != MessageBoxResult.Yes) return;
+
+            Apply(() => _session.RedesignEmptyTable(plan),
+                "Updated table design for " + table + ".", table);
+        }
+        catch (Exception ex)
+        {
+            ShowError("Cannot redesign this table", ex);
+        }
+    }
+
     private void ChangeField_Click(object sender, RoutedEventArgs e)
     {
         if (SelectedTable is not string table ||
@@ -163,8 +216,9 @@ public partial class SchemaManagerWindow : Window
         }
         if (field.PrimaryKey || field.DataType == "AutoNumber")
         {
-            MessageBox.Show(this, "Primary key or AutoNumber fields cannot be converted here.",
-                "Protected field", MessageBoxButton.OK, MessageBoxImage.Warning);
+            // Never strand the user behind a blanket "Protected field" warning.
+            // A complete redesign on an empty table can safely change this key.
+            EditTableDesign_Click(sender, e);
             return;
         }
 
