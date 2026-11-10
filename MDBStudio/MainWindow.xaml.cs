@@ -93,9 +93,9 @@ public partial class MainWindow : Window
         OpenDatabase(dialog.FileName);
     }
 
-    private void OpenDatabase(string filePath)
+    private bool OpenDatabase(string filePath)
     {
-        if (!DiscardPending()) return;
+        if (!DiscardPending()) return false;
         try
         {
             AccessSession next;
@@ -112,7 +112,7 @@ public partial class MainWindow : Window
                 if (prompt.ShowDialog() != true)
                 {
                     Status("Database opening cancelled.");
-                    return;
+                    return false;
                 }
                 // The password stays in this process and is never saved in settings or logs.
                 next = new AccessSession(filePath, prompt.EnteredPassword);
@@ -137,6 +137,11 @@ public partial class MainWindow : Window
             ExportQueryCsvButton.IsEnabled = false;
             ImportExcelButton.IsEnabled = true;
             SchemaButton.IsEnabled = true;
+            NewTableButton.IsEnabled = true;
+            SidebarCreateTableButton.IsEnabled = true;
+            SidebarDesignViewButton.IsEnabled = false;
+            EmptyDatabasePanel.Visibility = names.Count == 0
+                ? Visibility.Visible : Visibility.Collapsed;
             FileLabel.Text = filePath;
             DatabaseTitle.Text = Path.GetFileName(filePath);
             RecordSearchBox.Clear();
@@ -150,12 +155,18 @@ public partial class MainWindow : Window
             PageInfoLabel.Text = "Choose a table";
             UpdateActionStates();
             StatusRight.Text = "Database connected";
-            Status("Opened " + Path.GetFileName(filePath) + ". " + names.Count + " tables found.");
+            Status(names.Count == 0
+                ? "Opened " + Path.GetFileName(filePath) +
+                  ". No tables yet. Choose Create table to begin."
+                : "Opened " + Path.GetFileName(filePath) + ". " +
+                  names.Count + " tables found.");
+            return true;
         }
         catch (Exception ex)
         {
             _suppressSelection = false;
             Error("Could not open database", ex);
+            return false;
         }
     }
 
@@ -175,15 +186,75 @@ public partial class MainWindow : Window
         try
         {
             string destination = AccessDatabaseCreator.Create(dialog.FileName);
-            OpenDatabase(destination);
-            // A newly created Access file intentionally has no user tables.
-            // Import Excel/CSV to create the first table.
-            if (_session is not null &&
-                string.Equals(_session.FilePath, destination, StringComparison.OrdinalIgnoreCase))
+            if (!OpenDatabase(destination)) return;
+            WorkspaceTabs.SelectedIndex = 0;
+            // Access-style creation: immediately design the first usable table
+            // instead of leaving the user in an empty, inaccessible workspace.
+            if (!CreateTableInCurrentDatabase())
                 Status("Created " + Path.GetFileName(destination) +
-                       ". This database is empty; import Excel/CSV to add its first table.");
+                       ". The database has no tables yet. Choose Create table whenever you are ready.");
         }
         catch (Exception ex) { Error("Create database failed", ex); }
+    }
+
+    private void CreateTable_Click(object sender, RoutedEventArgs e)
+    {
+        CreateTableInCurrentDatabase();
+    }
+
+    private bool CreateTableInCurrentDatabase()
+    {
+        if (_session is null)
+        {
+            MessageBox.Show(this, "Create or open a database first.",
+                "Create table", MessageBoxButton.OK, MessageBoxImage.Information);
+            return false;
+        }
+        if (!CommitGridEdit()) return false;
+        if (_table?.GetChanges() is not null)
+        {
+            MessageBox.Show(this,
+                "Save or discard existing record changes before creating a table. " +
+                "The current grid cannot be reloaded while edits are pending.",
+                "Unsaved record edits", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
+        }
+
+        try
+        {
+            string proposed = DatabaseWorkspaceSetup.SuggestTableName(_session.ListTables());
+            var designer = new TableDesignerWindow(suggestedTableName: proposed) { Owner = this };
+            if (designer.ShowDialog() != true) return false;
+
+            string name = designer.TableName;
+            _session.CreateTable(name, designer.Definition); // Creates a backup first.
+            var names = _session.ListTables();
+            _suppressSelection = true;
+            _allTables = names;
+            TableSearchBox.Clear();
+            TableList.ItemsSource = names;
+            TableList.SelectedItem = name;
+            _suppressSelection = false;
+            _table = null;
+            _currentName = null;
+            _activeColumnFilters.Clear();
+            ResetFilterControls();
+            EmptyDatabasePanel.Visibility = Visibility.Collapsed;
+            WorkspaceTabs.SelectedIndex = 0;
+            if (!LoadTable(name, 0))
+                Status("Created " + name +
+                       ". Choose the table in the left pane to view its records.");
+            else
+                Status("Created table " + name +
+                       ". Add records in Datasheet View and select Save changes when finished.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _suppressSelection = false;
+            Error("Create table failed", ex);
+            return false;
+        }
     }
 
     private void AssociateFiles_Click(object sender, RoutedEventArgs e)
@@ -230,6 +301,8 @@ public partial class MainWindow : Window
             var tables = _session.ListTables();
             _suppressSelection = true;
             _allTables = tables;
+            EmptyDatabasePanel.Visibility = tables.Count == 0
+                ? Visibility.Visible : Visibility.Collapsed;
             TableSearchBox.Clear();
             TableList.ItemsSource = tables;
             TableList.SelectedItem = null;
@@ -936,6 +1009,7 @@ public partial class MainWindow : Window
     {
         bool open = _table is not null;
         bool writable = open && _table!.PrimaryKey.Length > 0;
+        SidebarDesignViewButton.IsEnabled = _session is not null && _currentName is not null;
         int cellCount = RecordsGrid.SelectedCells.Count;
         CopyButton.IsEnabled = open && cellCount > 0;
         PasteButton.IsEnabled = writable && cellCount > 0;

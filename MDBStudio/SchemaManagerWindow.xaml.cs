@@ -133,7 +133,9 @@ public partial class SchemaManagerWindow : Window
 
     private void CreateTable_Click(object sender, RoutedEventArgs e)
     {
-        var designer = new TableDesignerWindow { Owner = this };
+        var designer = new TableDesignerWindow(
+            suggestedTableName: DatabaseWorkspaceSetup.SuggestTableName(_session.ListTables()))
+            { Owner = this };
         if (designer.ShowDialog() != true) return;
         string table = designer.TableName;
         var fields = designer.Definition;

@@ -24,7 +24,8 @@ public partial class TableDesignerWindow : Window
     public IReadOnlyList<AccessFieldDefinition> Definition { get; private set; } =
         Array.Empty<AccessFieldDefinition>();
 
-    public TableDesignerWindow(string? existingTable = null, SchemaColumnInfo? existingField = null)
+    public TableDesignerWindow(string? existingTable = null, SchemaColumnInfo? existingField = null,
+        string? suggestedTableName = null)
     {
         InitializeComponent();
         _addingColumn = existingTable is not null && existingField is null;
@@ -68,11 +69,13 @@ public partial class TableDesignerWindow : Window
         }
         else
         {
-            TableNameBox.Text = "NewTable";
-            _fields.Add(new EditableSchemaField
-                { Name = "ID", Kind = AccessFieldKind.AutoNumber, PrimaryKey = true });
-            _fields.Add(new EditableSchemaField
-                { Name = "Name", Kind = AccessFieldKind.ShortText, Length = 100 });
+            TableNameBox.Text = suggestedTableName ?? "Table1";
+            foreach (var field in DatabaseWorkspaceSetup.StarterFields())
+                _fields.Add(new EditableSchemaField
+                {
+                    Name = field.Name, Kind = field.Kind, Length = field.Length,
+                    Required = field.Required, PrimaryKey = field.PrimaryKey
+                });
         }
     }
 
