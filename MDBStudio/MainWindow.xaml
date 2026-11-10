@@ -280,6 +280,9 @@
               <TextBox x:Name="SqlInput" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap"
                        VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12"/>
               <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,12">
+                <Button x:Name="VisualQueryDesignerButton" Style="{StaticResource BlueButton}"
+                        Content="Visual query designer" HorizontalAlignment="Left"
+                        Click="VisualQueryDesigner_Click" Margin="0,0,9,0"/>
                 <Button Style="{StaticResource BlueButton}" Content="Run SELECT query"
                         HorizontalAlignment="Left" Click="Query_Click"/>
                 <Button x:Name="ExportQueryExcelButton" Style="{StaticResource ToolButton}"
