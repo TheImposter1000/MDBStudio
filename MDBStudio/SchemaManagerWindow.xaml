@@ -7,13 +7,16 @@
   <DockPanel Margin="18">
     <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
       <TextBlock Text="Database structure" FontSize="23" FontWeight="SemiBold" Foreground="#174A83"/>
-      <TextBlock Text="Design tables, fields, indexes and relationships. Structure changes are applied immediately after making a backup."
+      <TextBlock Text="Design tables, fields, indexes and relationships. Use Edit table design to change primary keys on empty tables. Every structure change makes a backup."
                  Foreground="#536E8C" TextWrapping="Wrap" Margin="0,5,0,14"/>
       <WrapPanel VerticalAlignment="Center">
         <TextBlock Text="Table" Margin="0,0,9,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
         <ComboBox x:Name="TablesCombo" Width="240" SelectionChanged="TableChanged" Margin="0,0,10,0"/>
         <Button Content="Create table" Click="CreateTable_Click" Padding="12,8" Margin="0,0,8,0"/>
         <Button x:Name="AddFieldButton" Content="Add field" Click="AddField_Click" Padding="12,8" Margin="0,0,8,0"/>
+        <Button x:Name="EditTableDesignButton" Content="Edit table design" Click="EditTableDesign_Click"
+                Padding="12,8" Margin="0,0,8,0"
+                ToolTip="For empty tables, redesign all fields and the primary key safely"/>
         <Button x:Name="ChangeFieldButton" Content="Change field type" Click="ChangeField_Click"
                 Padding="12,8" Margin="0,0,8,0"/>
         <Button x:Name="DropFieldButton" Content="Delete field" Click="DropField_Click"
