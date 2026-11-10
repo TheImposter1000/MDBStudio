@@ -20,6 +20,8 @@
     <Compile Include="../MDBStudio/TableFilters.cs" Link="TableFilters.cs"/>
     <Compile Include="../MDBStudio/AccessSession.cs" Link="AccessSession.cs"/>
     <Compile Include="../MDBStudio/AccessSession.Schema.cs" Link="AccessSession.Schema.cs"/>
+    <Compile Include="../MDBStudio/AccessSession.TableRedesign.cs" Link="AccessSession.TableRedesign.cs"/>
+    <Compile Include="../MDBStudio/EmptyTableRedesign.cs" Link="EmptyTableRedesign.cs"/>
     <Compile Include="../MDBStudio/AccessSchemaSql.cs" Link="AccessSchemaSql.cs"/>
     <Compile Include="../MDBStudio/DatabaseWorkspaceSetup.cs" Link="DatabaseWorkspaceSetup.cs"/>
     <Compile Include="../MDBStudio/VisualQuerySql.cs" Link="VisualQuerySql.cs"/>

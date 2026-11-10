@@ -37,6 +37,7 @@ internal static class Program
         TestVisualQuerySql();
         TestSchemaEditingSql();
         TestFirstTableWorkspace();
+        TestFullEmptyTableRedesign();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -426,6 +427,94 @@ internal static class Program
         // Changing a designer's table name must not modify the shared defaults.
         Check(DatabaseWorkspaceSetup.StarterFields()[0].Name == "ID",
             "Each first-table designer should get a fresh independent field definition.");
+    }
+
+    private static void TestFullEmptyTableRedesign()
+    {
+        // This is the tblWorker scenario: change AutoNumber ID, modify the
+        // primary key, add other fields, and preserve valid secondary indexes.
+        var fields = new[]
+        {
+            new AccessFieldDefinition("ID", AccessFieldKind.ShortText, 64,
+                Required: true, PrimaryKey: true),
+            new AccessFieldDefinition("WorkerName", AccessFieldKind.ShortText, 120),
+            new AccessFieldDefinition("CompanyID", AccessFieldKind.Integer)
+        };
+        var indexes = new[]
+        {
+            new AccessRedesignIndex("IX_tblWorker", new[] { "ID" }, Unique: true),
+            new AccessRedesignIndex("IX_OldColumn", new[] { "OldColumn" }, Unique: false)
+        };
+
+        var plan = EmptyTableRedesign.Plan("tblWorker", 0, fields, indexes);
+        Check(plan.CreateTableSql.Contains("[ID] TEXT(64) NOT NULL") &&
+              plan.CreateTableSql.Contains("PRIMARY KEY ([ID])"),
+            "The screenshot's protected AutoNumber ID must be convertible to a text primary key.");
+        Check(plan.RetainedIndexes.Count == 1 &&
+              plan.RetainedIndexes[0].Name == "IX_tblWorker" &&
+              plan.RetainedIndexes[0].Unique,
+            "Existing compatible unique indexes must survive the redesign.");
+        Check(plan.RemovedIndexNames.SequenceEqual(new[] { "IX_OldColumn" }),
+            "Indexes on deleted or renamed fields must be shown in the confirmation first.");
+
+        var replacement = EmptyTableRedesign.Plan("tblWorker", 0,
+            new[]
+            {
+                new AccessFieldDefinition("WorkerKey", AccessFieldKind.Integer,
+                    PrimaryKey: true),
+                new AccessFieldDefinition("WorkerName", AccessFieldKind.ShortText, 150)
+            },
+            indexes);
+        Check(replacement.CreateTableSql.Contains("PRIMARY KEY ([WorkerKey])") &&
+              replacement.RemovedIndexNames.Count == 2,
+            "An empty table must be able to replace its original AutoNumber key entirely.");
+
+        var memo = EmptyTableRedesign.Plan("tblWorker", 0,
+            new[]
+            {
+                new AccessFieldDefinition("ID", AccessFieldKind.ShortText, 80,
+                    PrimaryKey: true),
+                new AccessFieldDefinition("Notes", AccessFieldKind.LongText)
+            },
+            new[] { new AccessRedesignIndex("IX_Notes", new[] { "Notes" }, false) });
+        Check(memo.RemovedIndexNames.SequenceEqual(new[] { "IX_Notes" }),
+            "Indexes on memo fields cannot be copied silently.");
+
+        bool refusedPopulated = false;
+        try
+        {
+            EmptyTableRedesign.Plan("tblWorker", 1, fields, indexes);
+        }
+        catch (InvalidOperationException ex)
+        {
+            refusedPopulated = ex.Message.Contains("contains 1", StringComparison.OrdinalIgnoreCase);
+        }
+        Check(refusedPopulated,
+            "A table with any existing records must never be rebuilt or dropped.");
+
+        foreach (Action invalid in new Action[]
+        {
+            () => EmptyTableRedesign.Plan("tblWorker", 0,
+                new[] { new AccessFieldDefinition("OnlyName", AccessFieldKind.ShortText) },
+                Array.Empty<AccessRedesignIndex>()),
+            () => EmptyTableRedesign.Plan("tblWorker", 0, fields,
+                new[] { new AccessRedesignIndex("Bad]Index", new[] { "ID" }, false) }),
+            () => EmptyTableRedesign.Plan("tblWorker", 0, fields,
+                new[] { new AccessRedesignIndex("IX", Array.Empty<string>(), false) }),
+            () => EmptyTableRedesign.Plan("tblWorker", 0, fields,
+                new[]
+                {
+                    new AccessRedesignIndex("IX", new[] { "ID" }, false),
+                    new AccessRedesignIndex("IX", new[] { "WorkerName" }, false)
+                })
+        })
+        {
+            bool rejected = false;
+            try { invalid(); }
+            catch (ArgumentException) { rejected = true; }
+            catch (InvalidOperationException) { rejected = true; }
+            Check(rejected, "Invalid or ambiguous schema migration must be rejected before any file is touched.");
+        }
     }
 
     private static DataTable Example()
