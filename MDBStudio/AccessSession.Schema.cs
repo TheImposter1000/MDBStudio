@@ -141,6 +141,62 @@ public sealed partial class AccessSession
         ApplySchemaSql(sql);
     }
 
+    public IReadOnlyDictionary<string, Type> QueryColumnTypes(string table)
+    {
+        AccessSchemaSql.Name(table);
+        if (!ListTables().Contains(table, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The query table does not exist.");
+        using var conn = Open();
+        return ReadSchema(conn, table).Columns.Cast<DataColumn>()
+            .ToDictionary(c => c.ColumnName, c => c.DataType,
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    public IReadOnlyList<string> ListSavedQueries()
+    {
+        using var conn = Open();
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var views = conn.GetOleDbSchemaTable(OleDbSchemaGuid.Views, null);
+            if (views is not null && views.Columns.Contains("TABLE_NAME"))
+                foreach (DataRow row in views.Rows)
+                {
+                    string name = Convert.ToString(row["TABLE_NAME"], CultureInfo.InvariantCulture) ?? "";
+                    if (name.Length != 0 && !name.StartsWith("~", StringComparison.Ordinal))
+                        names.Add(name);
+                }
+        }
+        catch (OleDbException) { }
+        try
+        {
+            var procedures = conn.GetOleDbSchemaTable(OleDbSchemaGuid.Procedures, null);
+            if (procedures is not null && procedures.Columns.Contains("PROCEDURE_NAME"))
+                foreach (DataRow row in procedures.Rows)
+                {
+                    string name = Convert.ToString(row["PROCEDURE_NAME"], CultureInfo.InvariantCulture) ?? "";
+                    if (name.EndsWith(";1", StringComparison.Ordinal)) name = name[..^2];
+                    if (name.Length != 0 && !name.StartsWith("~", StringComparison.Ordinal))
+                        names.Add(name);
+                }
+        }
+        catch (OleDbException) { }
+        return names.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    public void SaveSelectView(string name, string sourceTable,
+        IReadOnlyList<VisualQueryField> fields, VisualQueryJoin? join, bool distinct)
+    {
+        string sql = VisualQuerySql.Build(sourceTable, fields, join, distinct);
+        string id = AccessSchemaSql.Name(name);
+        if (ListTables().Contains(name, StringComparer.OrdinalIgnoreCase) ||
+            ListSavedQueries().Contains(name, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("A table or query with that name already exists.");
+
+        // CREATE VIEW requires Microsoft ACE/Jet; backups are required for all schema writes.
+        ApplySchemaSql("CREATE VIEW " + id + " AS " + sql);
+    }
+
     public void DeleteTable(string table)
     {
         string sql = AccessSchemaSql.DeleteTable(table);
