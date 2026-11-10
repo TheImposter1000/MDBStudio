@@ -18,6 +18,7 @@ public partial class TableDesignerWindow : Window
 {
     private readonly bool _addingColumn;
     private readonly bool _changingType;
+    private readonly bool _redesigning;
     private readonly ObservableCollection<EditableSchemaField> _fields = new();
 
     public string TableName => TableNameBox.Text.Trim();
@@ -25,14 +26,34 @@ public partial class TableDesignerWindow : Window
         Array.Empty<AccessFieldDefinition>();
 
     public TableDesignerWindow(string? existingTable = null, SchemaColumnInfo? existingField = null,
-        string? suggestedTableName = null)
+        string? suggestedTableName = null,
+        IReadOnlyList<SchemaColumnInfo>? redesignFields = null)
     {
         InitializeComponent();
-        _addingColumn = existingTable is not null && existingField is null;
+        _redesigning = redesignFields is not null;
+        _addingColumn = existingTable is not null && existingField is null && !_redesigning;
         _changingType = existingField is not null;
         FieldTypeColumn.ItemsSource = Enum.GetValues<AccessFieldKind>();
         FieldsGrid.ItemsSource = _fields;
-        if (_changingType)
+        if (_redesigning)
+        {
+            Heading.Text = "Design table: " + existingTable;
+            HelpText.Text = "Edit field names, types, lengths, required flags and primary keys. " +
+                "Changes to an empty table are first tested on a separate database copy, " +
+                "then committed with a full backup. Tables with records cannot be rebuilt this way.";
+            TableNameBox.Text = existingTable!;
+            TableNameBox.IsReadOnly = true;
+            SaveButton.Content = "Review and save design";
+            foreach (var field in redesignFields!)
+                _fields.Add(new EditableSchemaField
+                {
+                    Name = field.Name, Kind = KindFromSchema(field.DataType),
+                    Length = field.Length is > 0 and <= 255 ? field.Length : 255,
+                    Required = field.Required,
+                    PrimaryKey = field.PrimaryKey
+                });
+        }
+        else if (_changingType)
         {
             Heading.Text = "Change field type in " + existingTable;
             HelpText.Text = "Changing a type or reducing text length may truncate data, " +
@@ -81,6 +102,7 @@ public partial class TableDesignerWindow : Window
 
     private static AccessFieldKind KindFromSchema(string type) => type switch
     {
+        "AutoNumber" => AccessFieldKind.AutoNumber,
         "Short Text" => AccessFieldKind.ShortText,
         "Long Text" => AccessFieldKind.LongText,
         "Integer (32-bit)" => AccessFieldKind.Integer,
@@ -117,7 +139,9 @@ public partial class TableDesignerWindow : Window
             FieldsGrid.CommitEdit(DataGridEditingUnit.Row, true);
             _ = AccessSchemaSql.Name(TableName);
             var definition = _fields.Select(f => f.ToDefinition()).ToArray();
-            if (_changingType)
+            if (_redesigning)
+                _ = AccessSchemaSql.CreateTable(TableName, definition);
+            else if (_changingType)
             {
                 if (definition.Length != 1)
                     throw new InvalidOperationException("Choose one field to change.");
