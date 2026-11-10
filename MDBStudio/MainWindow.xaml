@@ -124,6 +124,14 @@
           <Button Style="{StaticResource BlueButton}" Click="Open_Click">
             <StackPanel><TextBlock Text="▣" FontSize="21" TextAlignment="Center"/><TextBlock Text="Open database" FontSize="11"/></StackPanel>
           </Button>
+          <Button x:Name="CreateDatabaseButton" Style="{StaticResource ToolButton}" Click="CreateDatabase_Click"
+                  ToolTip="Create a new blank MDB or ACCDB database without overwriting existing files">
+            <StackPanel><TextBlock Text="＋" FontSize="21" TextAlignment="Center"/><TextBlock Text="New database" FontSize="11"/></StackPanel>
+          </Button>
+          <Button x:Name="AssociateFilesButton" Style="{StaticResource ToolButton}" Click="AssociateFiles_Click"
+                  ToolTip="Make MDB Studio available in Windows Open With, then choose it in Default Apps">
+            <StackPanel><TextBlock Text="↗" FontSize="21" TextAlignment="Center"/><TextBlock Text="Open with setup" FontSize="11"/></StackPanel>
+          </Button>
           <Button x:Name="SaveButton" Style="{StaticResource ToolButton}" Click="Save_Click" IsEnabled="False">
             <StackPanel><TextBlock Text="▣" FontSize="21" TextAlignment="Center"/><TextBlock Text="Save changes" FontSize="11"/></StackPanel>
           </Button>
