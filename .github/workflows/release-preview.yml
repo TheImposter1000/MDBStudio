@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Unique stable version tag (for example v1.1.7)"
+        description: "Unique stable version tag (for example v1.1.8)"
         required: true
-        default: "v1.1.7"
+        default: "v1.1.8"
         type: string
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ inputs.tag || 'v1.1.7' }}
+      RELEASE_TAG: ${{ inputs.tag || 'v1.1.8' }}
     steps:
       - name: Check out reviewed source
         uses: actions/checkout@v4
@@ -35,7 +35,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
-            throw "Normal releases require semantic version tags such as v1.1.7."
+            throw "Normal releases require semantic version tags such as v1.1.8."
           }
           [xml] $project = Get-Content "MDBStudio/MDBStudio.csproj"
           $projectVersion = [string]$project.Project.PropertyGroup.Version
@@ -80,7 +80,7 @@ jobs:
             ""
             "Standard Windows release, published from the C# and WPF source in this repository."
             ""
-            "Adds multi-column filtering using any table header, full-database filtering and accurate filtered paging, condition options for text, numbers, dates, and blanks, value suggestions, and clear/remove controls. Also includes universal safe record deletion, copy/paste, database backups, Excel/CSV transfer, and the in-app updater."
+            "Adds new MDB/ACCDB database creation with DAO/ADOX, command-line file opening from Windows Explorer, opt-in per-user Open With registration and Windows Default Apps setup. Also retains column filters, safe record deletion, Excel/CSV transfer, automatic backups, and in-app updates."
             ""
             "The ZIP includes the app and a separate self-contained updater. Use the in-app Check & install updates button if you have v1.0.2 or newer."
             ""
