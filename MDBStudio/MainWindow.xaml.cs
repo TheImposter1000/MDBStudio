@@ -649,6 +649,27 @@ public partial class MainWindow : Window
         catch (Exception ex) { Error("Backup failed", ex); }
     }
 
+    private void VisualQueryDesigner_Click(object sender, RoutedEventArgs e)
+    {
+        if (_session is null)
+        {
+            MessageBox.Show(this, "Open an MDB or ACCDB database first.",
+                "Visual query designer", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var designer = new VisualQueryDesignerWindow(_session, _currentName)
+        {
+            Owner = this
+        };
+        if (designer.ShowDialog() == true && designer.ResultSql is string sql)
+        {
+            SqlInput.Text = sql;
+            WorkspaceTabs.SelectedIndex = 1;
+            Query_Click(sender, e);
+        }
+    }
+
     private void Query_Click(object sender, RoutedEventArgs e)
     {
         if (_session is null)
