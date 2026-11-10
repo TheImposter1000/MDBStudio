@@ -364,6 +364,7 @@ internal static class Program
             try { invalid(); }
             catch (InvalidOperationException) { rejected = true; }
             catch (ArgumentException) { rejected = true; }
+            catch (FormatException) { rejected = true; }
             Check(rejected, "Unsupported visual query designs must not generate SQL.");
         }
     }
