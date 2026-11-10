@@ -12,6 +12,17 @@ namespace MDBStudio;
 /// </summary>
 public sealed partial class AccessSession
 {
+    public long TableRecordCount(string name)
+    {
+        AccessSchemaSql.Name(name);
+        if (!ListTables().Contains(name, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The selected table no longer exists.");
+        using var conn = Open();
+        using var count = new OleDbCommand(
+            "SELECT COUNT(*) FROM " + AccessSchemaSql.Name(name), conn);
+        return Convert.ToInt64(count.ExecuteScalar(), CultureInfo.InvariantCulture);
+    }
+
     public EmptyTableRedesignPlan PlanEmptyTableRedesign(
         string name, IReadOnlyList<AccessFieldDefinition> fields)
     {
