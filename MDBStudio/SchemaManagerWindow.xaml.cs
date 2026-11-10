@@ -88,6 +88,8 @@ public partial class SchemaManagerWindow : Window
     private void SetTableActions(bool enabled)
     {
         AddFieldButton.IsEnabled = enabled;
+        ChangeFieldButton.IsEnabled = enabled;
+        DropFieldButton.IsEnabled = enabled;
         DeleteTableButton.IsEnabled = enabled;
         CreateIndexButton.IsEnabled = enabled;
         DropIndexButton.IsEnabled = enabled && IndexesCombo.Items.Count > 0;
@@ -146,6 +148,60 @@ public partial class SchemaManagerWindow : Window
         var field = designer.Definition[0];
         Apply(() => _session.AddField(table, field),
             "Added " + field.Name + " to " + table + ".", table);
+    }
+
+    private void ChangeField_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedTable is not string table ||
+            FieldsGrid.SelectedItem is not SchemaColumnInfo field)
+        {
+            MessageBox.Show(this, "Select a field row to change its data type.",
+                "Select a field", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (field.PrimaryKey || field.DataType == "AutoNumber")
+        {
+            MessageBox.Show(this, "Primary key or AutoNumber fields cannot be converted here.",
+                "Protected field", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        TableDesignerWindow designer;
+        try { designer = new TableDesignerWindow(table, field) { Owner = this }; }
+        catch (Exception ex) { ShowError("Unsupported column type", ex); return; }
+        if (designer.ShowDialog() != true) return;
+        var candidate = designer.Definition[0];
+        if (MessageBox.Show(this,
+            "Change the type of " + table + "." + field.Name + " to " +
+            candidate.Kind + "?\n\nExisting values may be truncated, converted or rejected. " +
+            "Queries and relationships may be affected. A separate MDB backup will be created first.",
+            "Confirm field conversion", MessageBoxButton.YesNo,
+            MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+
+        Apply(() => _session.AlterFieldType(table, candidate),
+            "Changed data type of " + field.Name + ".", table);
+    }
+
+    private void DropField_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedTable is not string table ||
+            FieldsGrid.SelectedItem is not SchemaColumnInfo field)
+        {
+            MessageBox.Show(this, "Select a field row to delete.",
+                "Select a field", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (field.PrimaryKey)
+        {
+            MessageBox.Show(this, "You cannot delete the primary key through this operation.",
+                "Protected field", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var confirm = new ExactTableConfirmation(field.Name, true) { Owner = this };
+        if (confirm.ShowDialog() != true) return;
+        Apply(() => _session.DropField(table, field.Name),
+            "Deleted field " + field.Name + ".", table);
     }
 
     private void CreateIndex_Click(object sender, RoutedEventArgs e)
@@ -212,10 +268,10 @@ internal sealed class ExactTableConfirmation : Window
     private readonly TextBox _typed = new();
     private readonly string _expected;
 
-    public ExactTableConfirmation(string table)
+    public ExactTableConfirmation(string table, bool field = false)
     {
         _expected = table;
-        Title = "Confirm table deletion";
+        Title = field ? "Confirm field deletion" : "Confirm table deletion";
         Width = 485;
         Height = 245;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -224,14 +280,18 @@ internal sealed class ExactTableConfirmation : Window
         var content = new StackPanel { Margin = new Thickness(20) };
         content.Children.Add(new TextBlock
         {
-            Text = "Deleting a table removes all its records and may break relationships. " +
-                   "MDB Studio creates a separate file backup before deletion.",
+            Text = field
+                ? "Deleting a field permanently removes its stored values in every record and " +
+                  "may break queries or relationships. MDB Studio creates a file backup first."
+                : "Deleting a table removes all its records and may break relationships. " +
+                  "MDB Studio creates a separate file backup before deletion.",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 14)
         });
         content.Children.Add(new TextBlock
         {
-            Text = "Type the exact table name to confirm: " + table,
+            Text = "Type the exact " + (field ? "field" : "table") +
+                   " name to confirm: " + table,
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap
         });
@@ -243,7 +303,8 @@ internal sealed class ExactTableConfirmation : Window
         };
         var yes = new Button
         {
-            Content = "Delete table", Padding = new Thickness(13, 8, 13, 8),
+            Content = field ? "Delete field" : "Delete table",
+            Padding = new Thickness(13, 8, 13, 8),
             Margin = new Thickness(0, 0, 8, 0)
         };
         yes.Click += (_, _) =>

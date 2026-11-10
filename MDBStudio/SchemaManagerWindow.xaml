@@ -14,6 +14,10 @@
         <ComboBox x:Name="TablesCombo" Width="240" SelectionChanged="TableChanged" Margin="0,0,10,0"/>
         <Button Content="Create table" Click="CreateTable_Click" Padding="12,8" Margin="0,0,8,0"/>
         <Button x:Name="AddFieldButton" Content="Add field" Click="AddField_Click" Padding="12,8" Margin="0,0,8,0"/>
+        <Button x:Name="ChangeFieldButton" Content="Change field type" Click="ChangeField_Click"
+                Padding="12,8" Margin="0,0,8,0"/>
+        <Button x:Name="DropFieldButton" Content="Delete field" Click="DropField_Click"
+                Padding="12,8" Margin="0,0,8,0" Foreground="#AD263E"/>
         <Button x:Name="DeleteTableButton" Content="Delete table" Click="DeleteTable_Click" Padding="12,8"
                 Foreground="#AD263E" Margin="0,0,8,0"/>
         <Button Content="Refresh" Click="Refresh_Click" Padding="12,8"/>

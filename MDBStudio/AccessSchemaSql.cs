@@ -121,6 +121,20 @@ public static class AccessSchemaSql
         return "ALTER TABLE " + Name(table) + " ADD COLUMN " + Column(field);
     }
 
+    public static string DropField(string table, string field) =>
+        "ALTER TABLE " + Name(table) + " DROP COLUMN " + Name(field);
+
+    public static string AlterFieldType(string table, AccessFieldDefinition field)
+    {
+        if (field.PrimaryKey || field.Kind == AccessFieldKind.AutoNumber)
+            throw new InvalidOperationException(
+                "Primary key and AutoNumber fields cannot be converted by this designer.");
+        // ALTER COLUMN changes only the Access data type and optional text size.
+        // Required/NULL properties must not be silently altered.
+        return "ALTER TABLE " + Name(table) + " ALTER COLUMN " +
+            Name(field.Name) + " " + TypeSql(field);
+    }
+
     public static string CreateIndex(string table, string name,
         IReadOnlyList<string> columns, bool unique)
     {

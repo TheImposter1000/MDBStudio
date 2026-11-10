@@ -141,6 +141,93 @@ public sealed partial class AccessSession
         ApplySchemaSql(sql);
     }
 
+    public IReadOnlyDictionary<string, Type> QueryColumnTypes(string table)
+    {
+        AccessSchemaSql.Name(table);
+        if (!ListTables().Contains(table, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The query table does not exist.");
+        using var conn = Open();
+        return ReadSchema(conn, table).Columns.Cast<DataColumn>()
+            .ToDictionary(c => c.ColumnName, c => c.DataType,
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    public IReadOnlyList<string> ListSavedQueries()
+    {
+        using var conn = Open();
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var views = conn.GetOleDbSchemaTable(OleDbSchemaGuid.Views, null);
+            if (views is not null && views.Columns.Contains("TABLE_NAME"))
+                foreach (DataRow row in views.Rows)
+                {
+                    string name = Convert.ToString(row["TABLE_NAME"], CultureInfo.InvariantCulture) ?? "";
+                    if (name.Length != 0 && !name.StartsWith("~", StringComparison.Ordinal))
+                        names.Add(name);
+                }
+        }
+        catch (OleDbException) { }
+        try
+        {
+            var procedures = conn.GetOleDbSchemaTable(OleDbSchemaGuid.Procedures, null);
+            if (procedures is not null && procedures.Columns.Contains("PROCEDURE_NAME"))
+                foreach (DataRow row in procedures.Rows)
+                {
+                    string name = Convert.ToString(row["PROCEDURE_NAME"], CultureInfo.InvariantCulture) ?? "";
+                    if (name.EndsWith(";1", StringComparison.Ordinal)) name = name[..^2];
+                    if (name.Length != 0 && !name.StartsWith("~", StringComparison.Ordinal))
+                        names.Add(name);
+                }
+        }
+        catch (OleDbException) { }
+        return names.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    public void SaveSelectView(string name, string sourceTable,
+        IReadOnlyList<VisualQueryField> fields, VisualQueryJoin? join, bool distinct)
+    {
+        string sql = VisualQuerySql.Build(sourceTable, fields, join, distinct);
+        string id = AccessSchemaSql.Name(name);
+        if (ListTables().Contains(name, StringComparer.OrdinalIgnoreCase) ||
+            ListSavedQueries().Contains(name, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("A table or query with that name already exists.");
+
+        // CREATE VIEW requires Microsoft ACE/Jet; backups are required for all schema writes.
+        ApplySchemaSql("CREATE VIEW " + id + " AS " + sql);
+    }
+
+    public void DropField(string table, string column)
+    {
+        var structure = InspectTable(table);
+        var field = structure.Columns.FirstOrDefault(f =>
+            f.Name.Equals(column, StringComparison.OrdinalIgnoreCase)) ??
+            throw new InvalidOperationException("The selected field does not exist.");
+        if (field.PrimaryKey)
+            throw new InvalidOperationException("A primary key cannot be removed. " +
+                "Change the table's key design before removing this column.");
+        if (structure.Columns.Count <= 1)
+            throw new InvalidOperationException("A table must retain at least one field.");
+        // DDL will be blocked by ACE for referenced/indexed fields.
+        ApplySchemaSql(AccessSchemaSql.DropField(table, field.Name));
+    }
+
+    public void AlterFieldType(string table, AccessFieldDefinition target)
+    {
+        var structure = InspectTable(table);
+        var existing = structure.Columns.FirstOrDefault(f =>
+            f.Name.Equals(target.Name, StringComparison.OrdinalIgnoreCase)) ??
+            throw new InvalidOperationException("The selected field does not exist.");
+        if (existing.PrimaryKey || existing.DataType == "AutoNumber")
+            throw new InvalidOperationException("Changing the type of a primary key or AutoNumber field is not supported.");
+        if (target.Kind == AccessFieldKind.AutoNumber || target.PrimaryKey)
+            throw new InvalidOperationException("Changing a field to an AutoNumber or primary key is not supported.");
+
+        // This operation can truncate or fail if existing values are incompatible.
+        // Caller must require explicit confirmation. Backup always precedes DDL.
+        ApplySchemaSql(AccessSchemaSql.AlterFieldType(table, target));
+    }
+
     public void DeleteTable(string table)
     {
         string sql = AccessSchemaSql.DeleteTable(table);

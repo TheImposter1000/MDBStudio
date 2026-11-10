@@ -34,6 +34,8 @@ internal static class Program
         TestNewDatabasePathSafety();
         TestWindowsFileOpening();
         TestSchemaDesignerSql();
+        TestVisualQuerySql();
+        TestSchemaEditingSql();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -269,6 +271,130 @@ internal static class Program
             new AccessFieldDefinition("ID", AccessFieldKind.AutoNumber, PrimaryKey: true)
         }).Contains("CONSTRAINT [PK_" + new string('T', 61) + "]"),
             "Primary key constraint name must respect Access's 64-character limit.");
+    }
+
+    private static void TestVisualQuerySql()
+    {
+        var fields = new[]
+        {
+            new VisualQueryField("Workers", "Name", typeof(string), true,
+                VisualQueryCriteria.Contains, "O'Brien", VisualQuerySort.Ascending),
+            new VisualQueryField("Workers", "CompanyUID", typeof(int), false,
+                VisualQueryCriteria.Equals, "-1")
+        };
+        string sql = VisualQuerySql.Build("Workers", fields);
+        Check(sql == "SELECT [Workers].[Name] FROM [Workers] WHERE " +
+              "InStr(1, [Workers].[Name], 'O''Brien', 1) > 0 AND " +
+              "[Workers].[CompanyUID] = -1 ORDER BY [Workers].[Name] ASC",
+            "A visual query must compile search criteria, sorting and signed numbers without SQL injection.");
+
+        var joined = new VisualQueryJoin("Workers", "CompanyUID", "Companies", "ID", true);
+        var joinedFields = new[]
+        {
+            new VisualQueryField("Workers", "ID", typeof(int), true),
+            new VisualQueryField("Companies", "ID", typeof(int), true,
+                VisualQueryCriteria.GreaterThan, "0", VisualQuerySort.Descending),
+            new VisualQueryField("Companies", "Name", typeof(string), true,
+                VisualQueryCriteria.StartsWith, "New")
+        };
+        string joinSql = VisualQuerySql.Build("Workers", joinedFields, joined, distinct: true);
+        Check(joinSql.StartsWith("SELECT DISTINCT [Workers].[ID] AS [Workers_ID], " +
+                "[Companies].[ID] AS [Companies_ID], [Companies].[Name] AS [Companies_Name] " +
+                "FROM [Workers] LEFT JOIN [Companies] ON [Workers].[CompanyUID] = [Companies].[ID]"),
+            "The query designer must generate unique output names and join keys.");
+        Check(joinSql.Contains("InStr(1, [Companies].[Name], 'New', 1) = 1") &&
+              joinSql.EndsWith("ORDER BY [Companies].[ID] DESC"),
+            "The joined table must allow filtering and descending sorting.");
+
+        string yesno = VisualQuerySql.Build("Matches", new[]
+        {
+            new VisualQueryField("Matches", "IsAngle", typeof(bool), true,
+                VisualQueryCriteria.Equals, "-1")
+        });
+        Check(yesno.Contains("[Matches].[IsAngle] = True"),
+            "Access Yes/No -1 values must not be confused with signed IDs.");
+
+        string date = VisualQuerySql.Build("Shows", new[]
+        {
+            new VisualQueryField("Shows", "ShowDate", typeof(DateTime), true,
+                VisualQueryCriteria.GreaterThan, "2026-11-10")
+        });
+        Check(date.Contains("[Shows].[ShowDate] > #11/10/2026 00:00:00#"),
+            "Date comparisons must be emitted in Access date-literal format.");
+
+        Check(VisualQuerySql.Build("Workers", new[]
+        {
+            new VisualQueryField("Workers", "Name", typeof(string), true,
+                VisualQueryCriteria.Equals, "X' OR 1=1")
+        }).Contains("'X'' OR 1=1'"), "Text criteria must escape apostrophes.");
+
+        foreach (Action invalid in new Action[]
+        {
+            () => VisualQuerySql.Build("Workers", Array.Empty<VisualQueryField>()),
+            () => VisualQuerySql.Build("Workers", new[]
+            {
+                new VisualQueryField("Workers", "ID", typeof(int), false)
+            }),
+            () => VisualQuerySql.Build("Workers", new[]
+            {
+                new VisualQueryField("OtherTable", "ID", typeof(int), true)
+            }),
+            () => VisualQuerySql.Build("Workers", new[]
+            {
+                new VisualQueryField("Workers", "Bad]Column", typeof(int), true)
+            }),
+            () => VisualQuerySql.Build("Workers", new[]
+            {
+                new VisualQueryField("Workers", "ID", typeof(int), true,
+                    VisualQueryCriteria.Contains, "1")
+            }),
+            () => VisualQuerySql.Build("Workers", new[]
+            {
+                new VisualQueryField("Workers", "ID", typeof(int), true,
+                    VisualQueryCriteria.Equals, "not a number")
+            }),
+            () => VisualQuerySql.Build("Workers", new[]
+            {
+                new VisualQueryField("Workers", "ID", typeof(int), true),
+                new VisualQueryField("Workers", "ID", typeof(int), true)
+            })
+        })
+        {
+            bool rejected = false;
+            try { invalid(); }
+            catch (InvalidOperationException) { rejected = true; }
+            catch (ArgumentException) { rejected = true; }
+            catch (FormatException) { rejected = true; }
+            Check(rejected, "Unsupported visual query designs must not generate SQL.");
+        }
+    }
+
+    private static void TestSchemaEditingSql()
+    {
+        Check(AccessSchemaSql.DropField("Workers", "OldNotes") ==
+            "ALTER TABLE [Workers] DROP COLUMN [OldNotes]",
+            "Delete field should use ACE DROP COLUMN syntax.");
+        Check(AccessSchemaSql.AlterFieldType("Workers",
+            new AccessFieldDefinition("NewNotes", AccessFieldKind.ShortText, 90)) ==
+            "ALTER TABLE [Workers] ALTER COLUMN [NewNotes] TEXT(90)",
+            "Field type and size changes should use supported Access ALTER COLUMN syntax.");
+        foreach (Action invalid in new Action[]
+        {
+            () => AccessSchemaSql.DropField("Workers", "Name]DROP"),
+            () => AccessSchemaSql.AlterFieldType("Workers",
+                new AccessFieldDefinition("ID", AccessFieldKind.AutoNumber)),
+            () => AccessSchemaSql.AlterFieldType("Workers",
+                new AccessFieldDefinition("ID", AccessFieldKind.Integer, PrimaryKey: true)),
+            () => AccessSchemaSql.AlterFieldType("Workers",
+                new AccessFieldDefinition("Name", AccessFieldKind.ShortText, 0))
+        })
+        {
+            bool rejected = false;
+            try { invalid(); }
+            catch (InvalidOperationException) { rejected = true; }
+            catch (ArgumentException) { rejected = true; }
+            Check(rejected, "Unsafe schema changes must be rejected before Access execution.");
+        }
     }
 
     private static DataTable Example()
