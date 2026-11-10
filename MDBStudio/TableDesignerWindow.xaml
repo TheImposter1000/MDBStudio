@@ -1,0 +1,47 @@
+<Window x:Class="MDBStudio.TableDesignerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MDB Studio | Table Designer" Height="560" Width="810"
+        MinHeight="430" MinWidth="680" WindowStartupLocation="CenterOwner"
+        Background="#F3F7FC" FontFamily="Segoe UI" ResizeMode="CanResize">
+  <DockPanel Margin="20">
+    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+      <TextBlock x:Name="Heading" FontSize="21" FontWeight="SemiBold" Foreground="#174A83"
+                 Text="Create a new table"/>
+      <TextBlock x:Name="HelpText" Margin="0,5,0,14" TextWrapping="Wrap"
+                 Foreground="#566D8C"
+                 Text="Add fields, choose data types, and mark a primary key so you can edit the new table."/>
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <TextBlock Text="Table name" Margin="0,0,12,0" FontWeight="SemiBold" VerticalAlignment="Center"/>
+        <TextBox x:Name="TableNameBox" Width="370" Padding="9,7"/>
+      </StackPanel>
+    </StackPanel>
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                HorizontalAlignment="Right" Margin="0,12,0,0">
+      <Button x:Name="AddFieldButton" Content="Add field" Click="AddField_Click"
+              Margin="0,0,8,0" Padding="14,9"/>
+      <Button x:Name="RemoveFieldButton" Content="Remove selected" Click="RemoveField_Click"
+              Margin="0,0,18,0" Padding="14,9"/>
+      <Button x:Name="SaveButton" Content="Create table" Click="Save_Click" IsDefault="True"
+              Background="#0867D7" Foreground="White" Padding="18,9" Margin="0,0,9,0"/>
+      <Button Content="Cancel" IsCancel="True" Padding="18,9"/>
+    </StackPanel>
+    <DataGrid x:Name="FieldsGrid" AutoGenerateColumns="False" CanUserAddRows="False"
+              CanUserDeleteRows="False" SelectionMode="Single" SelectionUnit="FullRow"
+              HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+              AlternatingRowBackground="#EFF5FC" RowHeight="32"
+              Background="White">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Field name" Width="*" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+        <DataGridComboBoxColumn x:Name="FieldTypeColumn" Header="Data type" Width="180"
+                                SelectedItemBinding="{Binding Kind, UpdateSourceTrigger=PropertyChanged}"/>
+        <DataGridTextColumn Header="Text length" Width="100"
+                            Binding="{Binding Length, UpdateSourceTrigger=PropertyChanged}"/>
+        <DataGridCheckBoxColumn Header="Required" Width="90"
+                                Binding="{Binding Required, UpdateSourceTrigger=PropertyChanged}"/>
+        <DataGridCheckBoxColumn Header="Primary key" Width="105"
+                                Binding="{Binding PrimaryKey, UpdateSourceTrigger=PropertyChanged}"/>
+      </DataGrid.Columns>
+    </DataGrid>
+  </DockPanel>
+</Window>
