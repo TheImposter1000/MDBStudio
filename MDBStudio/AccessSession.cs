@@ -21,7 +21,7 @@ public sealed class DatabasePasswordRequiredException : InvalidOperationExceptio
 /// Local ACE OLE DB access. Identifiers are validated, record values are parameterized,
 /// and writes require a backup; keyless tables support verified record deletion only.
 /// </summary>
-public sealed class AccessSession
+public sealed partial class AccessSession
 {
     private readonly string _provider;
     private readonly string? _databasePassword;

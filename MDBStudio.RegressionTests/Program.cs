@@ -33,6 +33,7 @@ internal static class Program
         TestColumnFilters();
         TestNewDatabasePathSafety();
         TestWindowsFileOpening();
+        TestSchemaDesignerSql();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -194,6 +195,80 @@ internal static class Program
         string command = WindowsFileAssociation.OpenCommand(exe);
         Check(command == "\"" + Path.GetFullPath(exe) + "\" \"%1\"",
             "Explorer command must quote executable and target file paths.");
+    }
+
+    private static void TestSchemaDesignerSql()
+    {
+        var fields = new[]
+        {
+            new AccessFieldDefinition("ID", AccessFieldKind.AutoNumber, PrimaryKey: true),
+            new AccessFieldDefinition("Name", AccessFieldKind.ShortText, 80, Required: true),
+            new AccessFieldDefinition("CompanyUID", AccessFieldKind.Integer),
+            new AccessFieldDefinition("IsActive", AccessFieldKind.YesNo)
+        };
+        string create = AccessSchemaSql.CreateTable("Workers", fields);
+        Check(create == "CREATE TABLE [Workers] ([ID] COUNTER, [Name] TEXT(80) NOT NULL, " +
+              "[CompanyUID] LONG, [IsActive] YESNO, CONSTRAINT [PK_Workers] PRIMARY KEY ([ID]))",
+            "Table designer must create a usable keyed Access table with explicit field types.");
+        Check(AccessSchemaSql.AddField("Workers",
+            new AccessFieldDefinition("BirthDate", AccessFieldKind.DateTime)) ==
+            "ALTER TABLE [Workers] ADD COLUMN [BirthDate] DATETIME",
+            "Adding a field should emit explicit, safe Access SQL.");
+        Check(AccessSchemaSql.CreateIndex("Workers", "IX_Name", new[] { "Name" }, unique: true) ==
+            "CREATE UNIQUE INDEX [IX_Name] ON [Workers] ([Name])",
+            "Unique index SQL should be generated from validated names.");
+        Check(AccessSchemaSql.DropIndex("Workers", "IX_Name") ==
+            "DROP INDEX [IX_Name] ON [Workers]", "Drop index should preserve table name.");
+        Check(AccessSchemaSql.AddRelationship("FK_Workers_Company", "Workers",
+            "CompanyUID", "Companies", "ID") ==
+            "ALTER TABLE [Workers] ADD CONSTRAINT [FK_Workers_Company] " +
+            "FOREIGN KEY ([CompanyUID]) REFERENCES [Companies] ([ID])",
+            "Foreign keys should target validated fields and existing tables.");
+        Check(AccessSchemaSql.DeleteTable("Workers") == "DROP TABLE [Workers]",
+            "Deleting a table must affect only the chosen table.");
+        var composite = new[]
+        {
+            new AccessFieldDefinition("Company", AccessFieldKind.Integer, PrimaryKey: true),
+            new AccessFieldDefinition("Worker", AccessFieldKind.Integer, PrimaryKey: true)
+        };
+        Check(AccessSchemaSql.CreateTable("WorkerCompany", composite).Contains(
+              "PRIMARY KEY ([Company], [Worker])"),
+            "Composite keys should be supported for relationship tables.");
+
+        foreach (Action invalid in new Action[]
+        {
+            () => AccessSchemaSql.Name("Bad] DROP TABLE"),
+            () => AccessSchemaSql.Name("MSysObjects"),
+            () => AccessSchemaSql.Name(new string('A', 65)),
+            () => AccessSchemaSql.CreateTable("NoKey",
+                new[] { new AccessFieldDefinition("Name", AccessFieldKind.ShortText) }),
+            () => AccessSchemaSql.CreateTable("Duplicate",
+                new[] { new AccessFieldDefinition("ID", AccessFieldKind.AutoNumber, PrimaryKey: true),
+                        new AccessFieldDefinition("id", AccessFieldKind.Integer) }),
+            () => AccessSchemaSql.CreateTable("BadLength",
+                new[] { new AccessFieldDefinition("ID", AccessFieldKind.AutoNumber, PrimaryKey: true),
+                        new AccessFieldDefinition("Note", AccessFieldKind.ShortText, 300) }),
+            () => AccessSchemaSql.CreateTable("WrongKey",
+                new[] { new AccessFieldDefinition("ID", AccessFieldKind.AutoNumber) }),
+            () => AccessSchemaSql.AddField("Workers",
+                new AccessFieldDefinition("AnotherID", AccessFieldKind.AutoNumber)),
+            () => AccessSchemaSql.AddRelationship("Self", "Workers", "ID", "Workers", "ID"),
+            () => AccessSchemaSql.CreateIndex("Workers", "IX", new[] { "Name", "Name" }, false)
+        })
+        {
+            bool rejected = false;
+            try { invalid(); }
+            catch (ArgumentException) { rejected = true; }
+            catch (InvalidOperationException) { rejected = true; }
+            Check(rejected, "Invalid or unsafe schema design must be rejected.");
+        }
+
+        var length64 = new string('T', 64);
+        Check(AccessSchemaSql.CreateTable(length64, new[]
+        {
+            new AccessFieldDefinition("ID", AccessFieldKind.AutoNumber, PrimaryKey: true)
+        }).Contains("CONSTRAINT [PK_" + new string('T', 61) + "]"),
+            "Primary key constraint name must respect Access's 64-character limit.");
     }
 
     private static DataTable Example()

@@ -2,7 +2,7 @@ name: Windows preview build
 
 on:
   push:
-    branches: [main, feature/windows-wpf-foundation]
+    branches: [main, 'feature/**', 'fix/**']
   pull_request:
     branches: [main]
   workflow_dispatch:

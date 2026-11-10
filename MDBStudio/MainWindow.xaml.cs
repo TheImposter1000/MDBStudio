@@ -136,6 +136,7 @@ public partial class MainWindow : Window
             ExportQueryExcelButton.IsEnabled = false;
             ExportQueryCsvButton.IsEnabled = false;
             ImportExcelButton.IsEnabled = true;
+            SchemaButton.IsEnabled = true;
             FileLabel.Text = filePath;
             DatabaseTitle.Text = Path.GetFileName(filePath);
             RecordSearchBox.Clear();
@@ -206,6 +207,62 @@ public partial class MainWindow : Window
                 });
         }
         catch (Exception ex) { Error("Could not register file associations", ex); }
+    }
+
+    private void ManageSchema_Click(object sender, RoutedEventArgs e)
+    {
+        if (_session is null) return;
+        if (!CommitGridEdit()) return;
+        if (_table?.GetChanges() is not null)
+        {
+            MessageBox.Show(this,
+                "Save or discard pending record edits before changing the database structure. " +
+                "This prevents changes from being lost when a table reloads.",
+                "Unsaved record edits", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var manager = new SchemaManagerWindow(_session, _currentName) { Owner = this };
+        manager.ShowDialog();
+        if (!manager.StructureChanged) return;
+        try
+        {
+            var tables = _session.ListTables();
+            _suppressSelection = true;
+            _allTables = tables;
+            TableSearchBox.Clear();
+            TableList.ItemsSource = tables;
+            TableList.SelectedItem = null;
+            _suppressSelection = false;
+            _table = null;
+            _currentName = null;
+            _activeColumnFilters.Clear();
+            ResetFilterControls();
+            RecordsGrid.ItemsSource = null;
+            RecordSearchBox.Clear();
+            TableLabel.Text = "Choose a table";
+            KeyLabel.Text = "";
+            _totalRecords = 0;
+            _pageIndex = 0;
+            UpdatePageControls(0);
+            if (manager.SelectedTable is string selected &&
+                tables.Contains(selected, StringComparer.OrdinalIgnoreCase))
+            {
+                _suppressSelection = true;
+                TableList.SelectedItem = tables.First(n =>
+                    n.Equals(selected, StringComparison.OrdinalIgnoreCase));
+                _suppressSelection = false;
+                LoadTable(selected, 0);
+            }
+            else
+                UpdateActionStates();
+            Status("Database structure updated. A backup was created before each schema change.");
+        }
+        catch (Exception ex)
+        {
+            _suppressSelection = false;
+            Error("Could not refresh database tables", ex);
+        }
     }
 
     private void TableList_SelectionChanged(object sender, SelectionChangedEventArgs e)

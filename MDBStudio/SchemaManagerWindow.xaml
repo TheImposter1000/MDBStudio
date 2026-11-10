@@ -1,0 +1,89 @@
+<Window x:Class="MDBStudio.SchemaManagerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MDB Studio | Database Structure" Height="780" Width="1040"
+        MinHeight="650" MinWidth="890" Background="#F3F7FC"
+        WindowStartupLocation="CenterOwner" FontFamily="Segoe UI">
+  <DockPanel Margin="18">
+    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+      <TextBlock Text="Database structure" FontSize="23" FontWeight="SemiBold" Foreground="#174A83"/>
+      <TextBlock Text="Design tables, fields, indexes and relationships. Structure changes are applied immediately after making a backup."
+                 Foreground="#536E8C" TextWrapping="Wrap" Margin="0,5,0,14"/>
+      <WrapPanel VerticalAlignment="Center">
+        <TextBlock Text="Table" Margin="0,0,9,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+        <ComboBox x:Name="TablesCombo" Width="240" SelectionChanged="TableChanged" Margin="0,0,10,0"/>
+        <Button Content="Create table" Click="CreateTable_Click" Padding="12,8" Margin="0,0,8,0"/>
+        <Button x:Name="AddFieldButton" Content="Add field" Click="AddField_Click" Padding="12,8" Margin="0,0,8,0"/>
+        <Button x:Name="DeleteTableButton" Content="Delete table" Click="DeleteTable_Click" Padding="12,8"
+                Foreground="#AD263E" Margin="0,0,8,0"/>
+        <Button Content="Refresh" Click="Refresh_Click" Padding="12,8"/>
+      </WrapPanel>
+    </StackPanel>
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,12,0,0"
+                HorizontalAlignment="Right">
+      <TextBlock x:Name="ResultLabel" VerticalAlignment="Center" Margin="0,0,15,0"
+                 Foreground="#42648A" Text="Ready"/>
+      <Button Content="Close" IsCancel="True" Padding="18,9" Click="Close_Click"/>
+    </StackPanel>
+    <Grid>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="*" MinHeight="180"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+      <GroupBox Header="Fields and primary keys" Padding="10" FontWeight="SemiBold" Foreground="#244D79">
+        <DataGrid x:Name="FieldsGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                  CanUserAddRows="False" FontWeight="Normal" Background="White"
+                  GridLinesVisibility="Horizontal" AlternatingRowBackground="#F1F6FD">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Field" Binding="{Binding Name}" Width="*"/>
+            <DataGridTextColumn Header="Data type" Binding="{Binding DataType}" Width="180"/>
+            <DataGridTextColumn Header="Length" Binding="{Binding Length}" Width="90"/>
+            <DataGridCheckBoxColumn Header="Required" Binding="{Binding Required}" Width="90"/>
+            <DataGridCheckBoxColumn Header="Primary key" Binding="{Binding PrimaryKey}" Width="100"/>
+          </DataGrid.Columns>
+        </DataGrid>
+      </GroupBox>
+      <GroupBox Grid.Row="1" Header="Indexes" Padding="11" Margin="0,12,0,0"
+                FontWeight="SemiBold" Foreground="#244D79">
+        <StackPanel>
+          <WrapPanel VerticalAlignment="Center">
+            <TextBlock Text="Name" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <TextBox x:Name="IndexNameBox" Width="150" Margin="0,0,9,0" Padding="7,5"/>
+            <TextBlock Text="Field" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <ComboBox x:Name="IndexColumnCombo" Width="150" Margin="0,0,9,0"/>
+            <CheckBox x:Name="UniqueIndexCheck" Content="Unique" VerticalAlignment="Center" Margin="0,0,12,0"/>
+            <Button x:Name="CreateIndexButton" Content="Create index" Click="CreateIndex_Click"
+                    Padding="9,6" Margin="0,0,10,0"/>
+          </WrapPanel>
+          <WrapPanel Margin="0,10,0,0" VerticalAlignment="Center">
+            <TextBlock Text="Existing indexes" VerticalAlignment="Center" Margin="0,0,9,0"/>
+            <ComboBox x:Name="IndexesCombo" Width="275" Margin="0,0,8,0"/>
+            <Button x:Name="DropIndexButton" Content="Delete selected index" Click="DropIndex_Click"
+                    Padding="9,6" Foreground="#AD263E"/>
+          </WrapPanel>
+        </StackPanel>
+      </GroupBox>
+      <GroupBox Grid.Row="2" Header="Relationships" Padding="11" Margin="0,12,0,0"
+                FontWeight="SemiBold" Foreground="#244D79">
+        <StackPanel>
+          <TextBlock Text="Create a foreign key from the selected table to a primary or unique key in another table."
+                     Foreground="#637C9A" FontWeight="Normal" Margin="0,0,0,9"/>
+          <WrapPanel VerticalAlignment="Center">
+            <TextBlock Text="Name" VerticalAlignment="Center" Margin="0,0,7,0"/>
+            <TextBox x:Name="RelationNameBox" Width="125" Margin="0,0,9,0" Padding="7,5"/>
+            <TextBlock Text="This field" VerticalAlignment="Center" Margin="0,0,7,0"/>
+            <ComboBox x:Name="ChildFieldCombo" Width="125" Margin="0,0,9,0"/>
+            <TextBlock Text="References table" VerticalAlignment="Center" Margin="0,0,7,0"/>
+            <ComboBox x:Name="ParentTableCombo" Width="145" Margin="0,0,9,0"
+                      SelectionChanged="ParentTableChanged"/>
+            <TextBlock Text="Field" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <ComboBox x:Name="ParentFieldCombo" Width="130" Margin="0,0,9,0"/>
+            <Button x:Name="CreateRelationButton" Content="Create relationship"
+                    Click="CreateRelationship_Click" Padding="9,6"/>
+          </WrapPanel>
+        </StackPanel>
+      </GroupBox>
+    </Grid>
+  </DockPanel>
+</Window>
