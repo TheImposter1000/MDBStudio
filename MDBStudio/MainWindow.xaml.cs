@@ -95,7 +95,7 @@ public partial class MainWindow : Window
 
     private bool OpenDatabase(string filePath)
     {
-        if (!DiscardPending()) return;
+        if (!DiscardPending()) return false;
         try
         {
             AccessSession next;
