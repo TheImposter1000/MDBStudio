@@ -36,6 +36,7 @@ internal static class Program
         TestSchemaDesignerSql();
         TestVisualQuerySql();
         TestSchemaEditingSql();
+        TestFirstTableWorkspace();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -395,6 +396,36 @@ internal static class Program
             catch (ArgumentException) { rejected = true; }
             Check(rejected, "Unsafe schema changes must be rejected before Access execution.");
         }
+    }
+
+    private static void TestFirstTableWorkspace()
+    {
+        Check(DatabaseWorkspaceSetup.SuggestTableName(Array.Empty<string>()) == "Table1",
+            "A new database should immediately offer Table1 as its first editable table.");
+        Check(DatabaseWorkspaceSetup.SuggestTableName(new[] { "table1", "Table2" }) == "Table3",
+            "New table names must not conflict with existing Access tables, regardless of case.");
+        Check(DatabaseWorkspaceSetup.SuggestTableName(new[] { "Table2" }) == "Table1",
+            "Unused Table1 should remain the first suggestion.");
+        var starter = DatabaseWorkspaceSetup.StarterFields();
+        Check(starter.Count == 2 &&
+              starter[0].Name == "ID" &&
+              starter[0].Kind == AccessFieldKind.AutoNumber &&
+              starter[0].PrimaryKey &&
+              starter[1].Name == "Name" &&
+              starter[1].Kind == AccessFieldKind.ShortText &&
+              starter[1].Length == 100,
+            "The first table must have a valid editable AutoNumber key and a text field.");
+
+        string sql = AccessSchemaSql.CreateTable("Table1", starter);
+        Check(sql.Contains("CREATE TABLE [Table1]") &&
+              sql.Contains("[ID] COUNTER") &&
+              sql.Contains("[Name] TEXT(100)") &&
+              sql.Contains("PRIMARY KEY ([ID])"),
+            "The proposed first table must be a valid Access table with a detectable primary key.");
+
+        // Changing a designer's table name must not modify the shared defaults.
+        Check(DatabaseWorkspaceSetup.StarterFields()[0].Name == "ID",
+            "Each first-table designer should get a fresh independent field definition.");
     }
 
     private static DataTable Example()
