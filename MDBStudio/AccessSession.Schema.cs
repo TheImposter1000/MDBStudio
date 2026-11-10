@@ -197,6 +197,37 @@ public sealed partial class AccessSession
         ApplySchemaSql("CREATE VIEW " + id + " AS " + sql);
     }
 
+    public void DropField(string table, string column)
+    {
+        var structure = InspectTable(table);
+        var field = structure.Columns.FirstOrDefault(f =>
+            f.Name.Equals(column, StringComparison.OrdinalIgnoreCase)) ??
+            throw new InvalidOperationException("The selected field does not exist.");
+        if (field.PrimaryKey)
+            throw new InvalidOperationException("A primary key cannot be removed. " +
+                "Change the table's key design before removing this column.");
+        if (structure.Columns.Count <= 1)
+            throw new InvalidOperationException("A table must retain at least one field.");
+        // DDL will be blocked by ACE for referenced/indexed fields.
+        ApplySchemaSql(AccessSchemaSql.DropField(table, field.Name));
+    }
+
+    public void AlterFieldType(string table, AccessFieldDefinition target)
+    {
+        var structure = InspectTable(table);
+        var existing = structure.Columns.FirstOrDefault(f =>
+            f.Name.Equals(target.Name, StringComparison.OrdinalIgnoreCase)) ??
+            throw new InvalidOperationException("The selected field does not exist.");
+        if (existing.PrimaryKey || existing.DataType == "AutoNumber")
+            throw new InvalidOperationException("Changing the type of a primary key or AutoNumber field is not supported.");
+        if (target.Kind == AccessFieldKind.AutoNumber || target.PrimaryKey)
+            throw new InvalidOperationException("Changing a field to an AutoNumber or primary key is not supported.");
+
+        // This operation can truncate or fail if existing values are incompatible.
+        // Caller must require explicit confirmation. Backup always precedes DDL.
+        ApplySchemaSql(AccessSchemaSql.AlterFieldType(table, target));
+    }
+
     public void DeleteTable(string table)
     {
         string sql = AccessSchemaSql.DeleteTable(table);
