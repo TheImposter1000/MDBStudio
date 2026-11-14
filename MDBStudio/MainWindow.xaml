@@ -282,6 +282,7 @@
               <DataGrid x:Name="RecordsGrid" AutoGenerateColumns="True" CanUserAddRows="False"
                         CanUserDeleteRows="False" IsReadOnly="True" SelectionUnit="CellOrRowHeader" SelectionMode="Extended"
                         SelectedCellsChanged="RecordsSelection_Changed" Sorting="RecordsGrid_Sorting"
+                        ColumnReordered="RecordsGrid_ColumnReordered" CanUserReorderColumns="True"
                         PreviewKeyDown="RecordsGrid_PreviewKeyDown"
                         PreviewMouseRightButtonDown="RecordsGrid_PreviewMouseRightButtonDown"
                         Background="White" FontSize="12">
@@ -289,10 +290,11 @@
                   <ContextMenu>
                     <MenuItem Header="Copy selected cells" Click="CopyCells_Click"/>
                     <MenuItem Header="Paste into selected cells" Click="PasteCells_Click"/>
+                    <MenuItem Header="Swap values in two selected cells" Click="SwapCells_Click"/>
                     <MenuItem Header="Fill selected cells down" Click="FillDown_Click"/>
                     <Separator/>
                     <MenuItem Header="Clear selected cell values (Delete)" Click="ClearCells_Click"/>
-                    <MenuItem Header="Delete selected records (Ctrl+Delete)" Click="DeleteRecords_Click"/>
+                    <MenuItem Header="Delete selected records immediately (Ctrl+Delete)" Click="DeleteRecords_Click"/>
                   </ContextMenu>
                 </DataGrid.ContextMenu>
               </DataGrid>
