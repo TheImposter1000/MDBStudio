@@ -20,6 +20,10 @@
                 HorizontalAlignment="Right" Margin="0,12,0,0">
       <Button x:Name="AddFieldButton" Content="Add field" Click="AddField_Click"
               Margin="0,0,8,0" Padding="14,9"/>
+      <Button x:Name="MoveFieldUpButton" Content="Move up" Click="MoveFieldUp_Click"
+              Margin="0,0,7,0" Padding="11,9" ToolTip="Move selected field one position earlier"/>
+      <Button x:Name="MoveFieldDownButton" Content="Move down" Click="MoveFieldDown_Click"
+              Margin="0,0,12,0" Padding="11,9" ToolTip="Move selected field one position later"/>
       <Button x:Name="RemoveFieldButton" Content="Remove selected" Click="RemoveField_Click"
               Margin="0,0,18,0" Padding="14,9"/>
       <Button x:Name="SaveButton" Content="Create table" Click="Save_Click" IsDefault="True"
