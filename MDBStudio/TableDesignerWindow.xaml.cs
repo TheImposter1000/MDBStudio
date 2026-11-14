@@ -62,6 +62,8 @@ public partial class TableDesignerWindow : Window
             TableNameBox.IsReadOnly = true;
             AddFieldButton.IsEnabled = false;
             RemoveFieldButton.IsEnabled = false;
+            MoveFieldUpButton.IsEnabled = false;
+            MoveFieldDownButton.IsEnabled = false;
             FieldNameColumn.IsReadOnly = true;
             RequiredColumn.IsReadOnly = true;
             PrimaryKeyColumn.IsReadOnly = true;
@@ -85,6 +87,8 @@ public partial class TableDesignerWindow : Window
             TableNameBox.IsReadOnly = true;
             AddFieldButton.IsEnabled = false;
             RemoveFieldButton.IsEnabled = false;
+            MoveFieldUpButton.IsEnabled = false;
+            MoveFieldDownButton.IsEnabled = false;
             SaveButton.Content = "Add field";
             _fields.Add(new EditableSchemaField { Name = "NewField" });
         }
@@ -129,6 +133,27 @@ public partial class TableDesignerWindow : Window
     {
         if (FieldsGrid.SelectedItem is EditableSchemaField field && !_addingColumn)
             _fields.Remove(field);
+    }
+
+    private void MoveFieldUp_Click(object sender, RoutedEventArgs e) =>
+        MoveSelectedField(-1);
+
+    private void MoveFieldDown_Click(object sender, RoutedEventArgs e) =>
+        MoveSelectedField(1);
+
+    private void MoveSelectedField(int direction)
+    {
+        if (_addingColumn || _changingType ||
+            FieldsGrid.SelectedItem is not EditableSchemaField selected) return;
+        FieldsGrid.CommitEdit(DataGridEditingUnit.Cell, true);
+        FieldsGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        int index = _fields.IndexOf(selected);
+        int destination = index + direction;
+        if (index < 0 || destination < 0 || destination >= _fields.Count) return;
+        _fields.Move(index, destination);
+        FieldsGrid.SelectedItem = selected;
+        FieldsGrid.ScrollIntoView(selected);
+        FieldsGrid.Focus();
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
