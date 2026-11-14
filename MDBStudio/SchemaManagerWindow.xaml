@@ -7,7 +7,7 @@
   <DockPanel Margin="18">
     <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
       <TextBlock Text="Database structure" FontSize="23" FontWeight="SemiBold" Foreground="#174A83"/>
-      <TextBlock Text="Design tables, fields, indexes and relationships. Use Edit table design to change primary keys on empty tables. Every structure change makes a backup."
+      <TextBlock Text="Reorder actual database fields by dragging rows, moving them up or down, or matching your datasheet layout. This works on populated tables without changing records."
                  Foreground="#536E8C" TextWrapping="Wrap" Margin="0,5,0,14"/>
       <WrapPanel VerticalAlignment="Center">
         <TextBlock Text="Table" Margin="0,0,9,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
@@ -39,9 +39,29 @@
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
       <GroupBox Header="Fields and primary keys" Padding="10" FontWeight="SemiBold" Foreground="#244D79">
-        <DataGrid x:Name="FieldsGrid" IsReadOnly="True" AutoGenerateColumns="False"
-                  CanUserAddRows="False" FontWeight="Normal" Background="White"
-                  GridLinesVisibility="Horizontal" AlternatingRowBackground="#F1F6FD">
+        <DockPanel>
+          <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,9" VerticalAlignment="Center">
+            <Button x:Name="MoveFieldUpButton" Content="Move up" Click="MoveFieldUp_Click"
+                    Padding="10,6" Margin="0,0,7,0"/>
+            <Button x:Name="MoveFieldDownButton" Content="Move down" Click="MoveFieldDown_Click"
+                    Padding="10,6" Margin="0,0,12,0"/>
+            <Button x:Name="MatchDatasheetOrderButton" Content="Match datasheet order"
+                    Click="MatchDatasheetOrder_Click" Padding="10,6" Margin="0,0,10,0"/>
+            <Button x:Name="SaveFieldOrderButton" Content="Save field order to database"
+                    Click="SaveFieldOrder_Click" Padding="12,6"
+                    Background="#0867D7" Foreground="White"/>
+            <TextBlock Text="Drag field rows to rearrange them."
+                       Foreground="#637C9A" FontWeight="Normal" VerticalAlignment="Center"
+                       Margin="12,0,0,0"/>
+          </WrapPanel>
+          <DataGrid x:Name="FieldsGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                    CanUserAddRows="False" CanUserSortColumns="False" AllowDrop="True"
+                    PreviewMouseLeftButtonDown="FieldsGrid_PreviewMouseLeftButtonDown"
+                    PreviewMouseMove="FieldsGrid_PreviewMouseMove"
+                    DragOver="FieldsGrid_DragOver" Drop="FieldsGrid_Drop"
+                    SelectionUnit="FullRow" SelectionMode="Single"
+                    FontWeight="Normal" Background="White"
+                    GridLinesVisibility="Horizontal" AlternatingRowBackground="#F1F6FD">
           <DataGrid.Columns>
             <DataGridTextColumn Header="Field" Binding="{Binding Name}" Width="*"/>
             <DataGridTextColumn Header="Data type" Binding="{Binding DataType}" Width="180"/>
@@ -49,7 +69,8 @@
             <DataGridCheckBoxColumn Header="Required" Binding="{Binding Required}" Width="90"/>
             <DataGridCheckBoxColumn Header="Primary key" Binding="{Binding PrimaryKey}" Width="100"/>
           </DataGrid.Columns>
-        </DataGrid>
+          </DataGrid>
+        </DockPanel>
       </GroupBox>
       <GroupBox Grid.Row="1" Header="Indexes" Padding="11" Margin="0,12,0,0"
                 FontWeight="SemiBold" Foreground="#244D79">
