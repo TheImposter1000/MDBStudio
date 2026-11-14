@@ -138,6 +138,69 @@ public static class GridCellEditor
         return staged.Count;
     }
 
+    /// <summary>
+    /// Exchange the values in exactly two editable cells. Both conversions
+    /// are checked before changing either row. Swapping does not affect a
+    /// database until the existing Save Changes command is used.
+    /// </summary>
+    public static void Swap(DataRow firstRow, DataColumn firstColumn,
+        DataRow secondRow, DataColumn secondColumn)
+    {
+        static void EnsureEditable(DataRow row, DataColumn col)
+        {
+            if (row.Table is null || col.Table != row.Table ||
+                row.RowState is DataRowState.Deleted or DataRowState.Detached)
+                throw new InvalidOperationException("Select cells from two available records.");
+            if (col.ReadOnly || col.AutoIncrement || !string.IsNullOrEmpty(col.Expression) ||
+                row.Table.PrimaryKey.Contains(col))
+                throw new InvalidOperationException(
+                    "Choose ordinary editable cells. Primary key and generated fields cannot be swapped.");
+        }
+
+        if (ReferenceEquals(firstRow, secondRow) &&
+            ReferenceEquals(firstColumn, secondColumn))
+            throw new InvalidOperationException("Select two different cells to swap.");
+
+        EnsureEditable(firstRow, firstColumn);
+        EnsureEditable(secondRow, secondColumn);
+
+        object originalFirst = firstRow[firstColumn];
+        object originalSecond = secondRow[secondColumn];
+
+        static object ConvertValue(object incoming, DataColumn destination)
+        {
+            if (incoming is DBNull)
+                return destination.AllowDBNull ? DBNull.Value :
+                    throw new InvalidOperationException(
+                        "The destination field " + destination.ColumnName + " cannot be NULL.");
+            if (incoming.GetType() == destination.DataType)
+                return incoming;
+            return ConvertCell(ToText(incoming), destination);
+        }
+
+        object newFirst, newSecond;
+        try
+        {
+            newFirst = ConvertValue(originalSecond, firstColumn);
+            newSecond = ConvertValue(originalFirst, secondColumn);
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or
+            OverflowException or ArgumentException)
+        {
+            throw new InvalidOperationException(
+                "The selected cells have incompatible data types. Nothing was swapped. " +
+                ex.Message, ex);
+        }
+
+        firstRow[firstColumn] = newFirst;
+        try { secondRow[secondColumn] = newSecond; }
+        catch
+        {
+            try { firstRow[firstColumn] = originalFirst; } catch { }
+            throw;
+        }
+    }
+
     private static object ConvertCell(string text, DataColumn col)
     {
         Type type = col.DataType;

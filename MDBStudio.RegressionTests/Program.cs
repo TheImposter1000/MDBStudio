@@ -40,6 +40,7 @@ internal static class Program
         TestFullEmptyTableRedesign();
         TestActualAccessColumnMetadata();
         TestSafeFieldConversions();
+        TestColumnOrderingAndCellSwap();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -600,6 +601,77 @@ internal static class Program
             "After staged ALTER, record values must match original values exactly.");
         Check(AccessFieldConversion.DisplaySample("first\r\nsecond").Contains("first  second"),
             "Error examples should be readable and not include control characters.");
+    }
+
+    private static void TestColumnOrderingAndCellSwap()
+    {
+        var actual = new[] { "ID", "WorkerName", "Company", "GenderID" };
+        var order = TableColumnLayout.Apply(actual,
+            new[] { "Company", "ID", "WorkerName", "ID", "FormerColumn" });
+        Check(order.SequenceEqual(new[] { "Company", "ID", "WorkerName", "GenderID" }),
+            "Datasheet drag order should preserve actual fields and ignore repeated/missing names.");
+        Check(TableColumnLayout.Apply(actual, Array.Empty<string>()).SequenceEqual(actual),
+            "Uncustomized datasheets must retain their original column ordering.");
+        Check(TableColumnLayout.Apply(actual, new[] { "genderid", "id" })
+            .SequenceEqual(new[] { "GenderID", "ID", "WorkerName", "Company" }),
+            "Column order preferences should match Access field names without case sensitivity.");
+
+        var fields = new[]
+        {
+            new AccessFieldDefinition("ID", AccessFieldKind.AutoNumber, PrimaryKey: true),
+            new AccessFieldDefinition("Company", AccessFieldKind.ShortText, 100),
+            new AccessFieldDefinition("WorkerName", AccessFieldKind.ShortText, 100)
+        };
+        var sql = AccessSchemaSql.CreateTable("Workers", fields);
+        Check(sql.IndexOf("[Company] TEXT", StringComparison.Ordinal) <
+              sql.IndexOf("[WorkerName] TEXT", StringComparison.Ordinal),
+            "Moving fields in Design View must change CREATE TABLE column positions.");
+
+        var table = new DataTable("tblWorker");
+        var key = table.Columns.Add("ID", typeof(int));
+        var name = table.Columns.Add("WorkerName", typeof(string));
+        var company = table.Columns.Add("Company", typeof(string));
+        var number = table.Columns.Add("Rating", typeof(int));
+        table.PrimaryKey = new[] { key };
+        table.Rows.Add(1, "Alex", "Company A", 10);
+        table.Rows.Add(2, "Sam", "Company B", 20);
+        table.AcceptChanges();
+
+        GridCellEditor.Swap(table.Rows[0], name, table.Rows[1], name);
+        Check((string)table.Rows[0][name] == "Sam" &&
+              (string)table.Rows[1][name] == "Alex",
+            "A two-cell swap should exchange values across records.");
+
+        GridCellEditor.Swap(table.Rows[0], name, table.Rows[0], company);
+        Check((string)table.Rows[0][name] == "Company A" &&
+              (string)table.Rows[0][company] == "Sam",
+            "Two editable fields in the same record should be swappable.");
+
+        GridCellEditor.Swap(table.Rows[0], number, table.Rows[1], number);
+        Check((int)table.Rows[0][number] == 20 &&
+              (int)table.Rows[1][number] == 10,
+            "Numeric cell swaps must keep the original value type.");
+
+        var firstBefore = table.Rows[0][name];
+        var secondBefore = table.Rows[1][number];
+        bool rejected = false;
+        try { GridCellEditor.Swap(table.Rows[0], name, table.Rows[1], number); }
+        catch (InvalidOperationException) { rejected = true; }
+        Check(rejected && Equals(table.Rows[0][name], firstBefore) &&
+              Equals(table.Rows[1][number], secondBefore),
+            "An incompatible text/numeric swap must not change either cell.");
+
+        rejected = false;
+        try { GridCellEditor.Swap(table.Rows[0], key, table.Rows[1], key); }
+        catch (InvalidOperationException) { rejected = true; }
+        Check(rejected && (int)table.Rows[0][key] == 1 && (int)table.Rows[1][key] == 2,
+            "Swapping primary key values should remain prohibited.");
+
+        table.Rows[0][company] = DBNull.Value;
+        GridCellEditor.Swap(table.Rows[0], company, table.Rows[1], company);
+        Check((string)table.Rows[0][company] == "Company B" &&
+              table.Rows[1][company] == DBNull.Value,
+            "Swapping a NULL must preserve NULL instead of converting it to an empty string.");
     }
 
     private static DataTable Example()

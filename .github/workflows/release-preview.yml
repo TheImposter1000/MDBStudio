@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Unique stable version tag (for example v1.3.3)"
+        description: "Unique stable version tag (for example v1.3.4)"
         required: true
-        default: "v1.3.3"
+        default: "v1.3.4"
         type: string
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ inputs.tag || 'v1.3.3' }}
+      RELEASE_TAG: ${{ inputs.tag || 'v1.3.4' }}
     steps:
       - name: Check out reviewed source
         uses: actions/checkout@v4
@@ -35,7 +35,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
-            throw "Normal releases require semantic version tags such as v1.3.3."
+            throw "Normal releases require semantic version tags such as v1.3.4."
           }
           [xml] $project = Get-Content "MDBStudio/MDBStudio.csproj"
           $projectVersion = [string]$project.Project.PropertyGroup.Version
@@ -80,7 +80,7 @@ jobs:
             ""
             "Standard Windows release, published from the C# and WPF source in this repository."
             ""
-            "Fixes misleading Access text field types by reading OLE DB column metadata, guides type changes on empty tables through complete Design View, detects no-op changes, and validates every value before converting populated columns. All populated column conversions are tested on a separate database copy and checked row by row before an atomic replacement, with a fresh backup. Rejected values and unsupported ACE conversions now show actionable messages without changing the original. Also includes table and query design, backups, and Explorer opening."
+            "Adds drag-to-reorder datasheet columns with per-table saved layouts, move-up and move-down field controls in table design, and swap-two-selected-cells. Removes repeated confirmation dialogs for record, field, index, and table deletion, and other schema changes. Deleting records commits immediately when no other edits are pending; otherwise deletion joins the unsaved changes. Silent automatic database backups and Access integrity checks remain."
             ""
             "The ZIP includes the app and a separate self-contained updater. Use the in-app Check & install updates button if you have v1.0.2 or newer."
             ""
