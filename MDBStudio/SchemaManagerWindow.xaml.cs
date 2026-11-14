@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 
 namespace MDBStudio;
 
@@ -184,18 +183,6 @@ public partial class SchemaManagerWindow : Window
 
             EmptyTableRedesignPlan plan =
                 _session.PlanEmptyTableRedesign(table, designer.Definition);
-            string caution = "Apply the new design to EMPTY table '" + table + "'?\n\n" +
-                "Field names, data types, required flags, and the primary key may change. " +
-                "Existing indexes will be preserved where the new fields support them.\n\n" +
-                plan.Description + "\n\n" +
-                "MDB Studio will make a full database backup, apply the change only to " +
-                "a temporary database copy, and replace the original only after verification. " +
-                "If other tables or relationships prevent redesign, the original will remain unchanged.";
-
-            if (MessageBox.Show(this, caution, "Confirm complete table redesign",
-                MessageBoxButton.YesNo, MessageBoxImage.Warning,
-                MessageBoxResult.No) != MessageBoxResult.Yes) return;
-
             Apply(() => _session.RedesignEmptyTable(plan),
                 "Updated table design for " + table + ".", table);
         }
@@ -245,13 +232,6 @@ public partial class SchemaManagerWindow : Window
                 "No changes to save", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        if (MessageBox.Show(this,
-            "Change the type of " + table + "." + field.Name + " to " +
-            candidate.Kind + "?\n\nExisting values may be truncated, converted or rejected. " +
-            "Queries and relationships may be affected. A separate MDB backup will be created first.",
-            "Confirm field conversion", MessageBoxButton.YesNo,
-            MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
-
         Apply(() => _session.AlterFieldType(table, candidate),
             "Changed data type of " + field.Name + ".", table);
     }
@@ -272,8 +252,6 @@ public partial class SchemaManagerWindow : Window
             return;
         }
 
-        var confirm = new ExactTableConfirmation(field.Name, true) { Owner = this };
-        if (confirm.ShowDialog() != true) return;
         Apply(() => _session.DropField(table, field.Name),
             "Deleted field " + field.Name + ".", table);
     }
@@ -292,10 +270,6 @@ public partial class SchemaManagerWindow : Window
     {
         if (SelectedTable is not string table || IndexesCombo.SelectedItem is not string index)
             return;
-        if (MessageBox.Show(this, "Delete index '" + index + "' from '" + table +
-            "'? This may affect queries or relationships. A backup is created first.",
-            "Confirm index removal", MessageBoxButton.YesNo, MessageBoxImage.Warning,
-            MessageBoxResult.No) != MessageBoxResult.Yes) return;
         Apply(() => _session.DeleteIndex(table, index), "Removed index " + index + ".", table);
     }
 
@@ -311,13 +285,6 @@ public partial class SchemaManagerWindow : Window
             return;
         }
         string name = RelationNameBox.Text.Trim();
-        if (MessageBox.Show(this,
-            "Create foreign key '" + name + "' from " + child + "." + childField +
-            " to " + parent + "." + parentField +
-            "?\n\nExisting data must satisfy the relationship. A backup will be created first.",
-            "Confirm relationship", MessageBoxButton.YesNo, MessageBoxImage.Question,
-            MessageBoxResult.No) != MessageBoxResult.Yes) return;
-
         Apply(() => _session.AddRelationship(name, child, childField, parent, parentField),
             "Created relationship " + name + ".", child);
     }
@@ -325,8 +292,6 @@ public partial class SchemaManagerWindow : Window
     private void DeleteTable_Click(object sender, RoutedEventArgs e)
     {
         if (SelectedTable is not string table) return;
-        var prompt = new ExactTableConfirmation(table) { Owner = this };
-        if (prompt.ShowDialog() != true) return;
         Apply(() => _session.DeleteTable(table), "Deleted table " + table + ".");
     }
 
@@ -336,62 +301,3 @@ public partial class SchemaManagerWindow : Window
     }
 }
 
-/// <summary>Explicit exact-name confirmation for irreversible Access DROP TABLE.</summary>
-internal sealed class ExactTableConfirmation : Window
-{
-    private readonly TextBox _typed = new();
-    private readonly string _expected;
-
-    public ExactTableConfirmation(string table, bool field = false)
-    {
-        _expected = table;
-        Title = field ? "Confirm field deletion" : "Confirm table deletion";
-        Width = 485;
-        Height = 245;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        ResizeMode = ResizeMode.NoResize;
-        Background = Brushes.White;
-        var content = new StackPanel { Margin = new Thickness(20) };
-        content.Children.Add(new TextBlock
-        {
-            Text = field
-                ? "Deleting a field permanently removes its stored values in every record and " +
-                  "may break queries or relationships. MDB Studio creates a file backup first."
-                : "Deleting a table removes all its records and may break relationships. " +
-                  "MDB Studio creates a separate file backup before deletion.",
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 14)
-        });
-        content.Children.Add(new TextBlock
-        {
-            Text = "Type the exact " + (field ? "field" : "table") +
-                   " name to confirm: " + table,
-            FontWeight = FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap
-        });
-        _typed.Margin = new Thickness(0, 8, 0, 14);
-        content.Children.Add(_typed);
-        var row = new StackPanel
-        {
-            Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right
-        };
-        var yes = new Button
-        {
-            Content = field ? "Delete field" : "Delete table",
-            Padding = new Thickness(13, 8, 13, 8),
-            Margin = new Thickness(0, 0, 8, 0)
-        };
-        yes.Click += (_, _) =>
-        {
-            if (_typed.Text != _expected)
-                MessageBox.Show(this, "Table name does not match. Nothing was deleted.",
-                    "Confirmation required", MessageBoxButton.OK, MessageBoxImage.Warning);
-            else DialogResult = true;
-        };
-        row.Children.Add(yes);
-        row.Children.Add(new Button
-            { Content = "Cancel", IsCancel = true, Padding = new Thickness(13, 8, 13, 8) });
-        content.Children.Add(row);
-        Content = content;
-    }
-}
