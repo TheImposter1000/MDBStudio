@@ -20,30 +20,25 @@ public sealed partial class AccessSession
             throw new InvalidOperationException("The selected table does not exist.");
         using var connection = Open();
         DataTable schema = ReadSchema(connection, table);
-        var keys = FindPrimaryKeys(connection, table).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var columns = schema.Columns.Cast<DataColumn>()
-            .Select(c => new SchemaColumnInfo(
-                c.ColumnName, FriendlyType(c), c.MaxLength, !c.AllowDBNull,
-                keys.Contains(c.ColumnName))).ToArray();
-        return new SchemaTableInfo(table, columns, GetIndexes(connection, table));
-    }
+        DataTable? columnsSchema = null;
+        try
+        {
+            columnsSchema = connection.GetOleDbSchemaTable(OleDbSchemaGuid.Columns,
+                new object?[] { null, null, table, null });
+        }
+        catch (OleDbException) { /* Fall back to FillSchema if the provider cannot supply metadata. */ }
 
-    private static string FriendlyType(DataColumn column)
-    {
-        Type type = column.DataType;
-        if (column.AutoIncrement) return "AutoNumber";
-        if (type == typeof(string)) return column.MaxLength is > 0 and <= 255 ? "Short Text" : "Long Text";
-        if (type == typeof(int)) return "Integer (32-bit)";
-        if (type == typeof(short)) return "Small Integer";
-        if (type == typeof(byte)) return "Byte";
-        if (type == typeof(bool)) return "Yes/No";
-        if (type == typeof(DateTime)) return "Date/Time";
-        if (type == typeof(double)) return "Double";
-        if (type == typeof(float)) return "Single";
-        if (type == typeof(decimal)) return "Decimal/Currency";
-        if (type == typeof(Guid)) return "GUID";
-        if (type == typeof(byte[])) return "Binary/OLE";
-        return type.Name;
+        var keys = FindPrimaryKeys(connection, table).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var columns = schema.Columns.Cast<DataColumn>().Select(c =>
+        {
+            var metadata = AccessFieldMetadata.ReadColumnMetadata(columnsSchema, c.ColumnName);
+            string type = AccessFieldMetadata.FriendlyType(c, metadata.Type, metadata.Length);
+            int length = type == "Short Text"
+                ? AccessFieldMetadata.TextLength(c, metadata.Length) : c.MaxLength;
+            return new SchemaColumnInfo(c.ColumnName, type, length,
+                !c.AllowDBNull, keys.Contains(c.ColumnName));
+        }).ToArray();
+        return new SchemaTableInfo(table, columns, GetIndexes(connection, table));
     }
 
     private static IReadOnlyList<string> GetIndexes(OleDbConnection connection, string table)
