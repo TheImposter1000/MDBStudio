@@ -218,9 +218,10 @@ public sealed partial class AccessSession
         if (target.Kind == AccessFieldKind.AutoNumber || target.PrimaryKey)
             throw new InvalidOperationException("Changing a field to an AutoNumber or primary key is not supported.");
 
-        // This operation can truncate or fail if existing values are incompatible.
-        // Caller must require explicit confirmation. Backup always precedes DDL.
-        ApplySchemaSql(AccessSchemaSql.AlterFieldType(table, target));
+        // Never run ALTER COLUMN directly on the live database. Access may
+        // coerce/drop values or fail after a partial schema change. Validate
+        // every saved value and apply only to a verified staging database.
+        AlterFieldTypeSafely(table, existing, target);
     }
 
     public void DeleteTable(string table)
