@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Unique stable version tag (for example v1.3.2)"
+        description: "Unique stable version tag (for example v1.3.3)"
         required: true
-        default: "v1.3.2"
+        default: "v1.3.3"
         type: string
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ inputs.tag || 'v1.3.2' }}
+      RELEASE_TAG: ${{ inputs.tag || 'v1.3.3' }}
     steps:
       - name: Check out reviewed source
         uses: actions/checkout@v4
@@ -35,7 +35,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
-            throw "Normal releases require semantic version tags such as v1.3.2."
+            throw "Normal releases require semantic version tags such as v1.3.3."
           }
           [xml] $project = Get-Content "MDBStudio/MDBStudio.csproj"
           $projectVersion = [string]$project.Project.PropertyGroup.Version
@@ -80,7 +80,7 @@ jobs:
             ""
             "Standard Windows release, published from the C# and WPF source in this repository."
             ""
-            "Adds an editable full-table Design View for EMPTY Access tables, including changing AutoNumber primary keys, renaming/retyping fields, setting required flags and adding fields. The change is validated on a temporary database clone, compatible secondary indexes are retained, and the original is atomically replaced only after verification and a full backup. Tables with records or relationships are never rebuilt. Also preserves first-table onboarding, filters, visual queries and safe record editing."
+            "Fixes misleading Access text field types by reading OLE DB column metadata, guides type changes on empty tables through complete Design View, detects no-op changes, and validates every value before converting populated columns. All populated column conversions are tested on a separate database copy and checked row by row before an atomic replacement, with a fresh backup. Rejected values and unsupported ACE conversions now show actionable messages without changing the original. Also includes table and query design, backups, and Explorer opening."
             ""
             "The ZIP includes the app and a separate self-contained updater. Use the in-app Check & install updates button if you have v1.0.2 or newer."
             ""

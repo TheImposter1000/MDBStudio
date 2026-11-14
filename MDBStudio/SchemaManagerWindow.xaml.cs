@@ -214,11 +214,21 @@ public partial class SchemaManagerWindow : Window
                 "Select a field", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        if (field.PrimaryKey || field.DataType == "AutoNumber")
+        // An empty table has no records to convert. Use its complete Design
+        // View instead of ALTER COLUMN, which ACE can reject even on an empty
+        // column with a "Data type mismatch in criteria expression" error.
+        try
         {
-            // Never strand the user behind a blanket "Protected field" warning.
-            // A complete redesign on an empty table can safely change this key.
-            EditTableDesign_Click(sender, e);
+            if (_session.TableRecordCount(table) == 0 ||
+                field.PrimaryKey || field.DataType == "AutoNumber")
+            {
+                EditTableDesign_Click(sender, e);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowError("Could not inspect saved records", ex);
             return;
         }
 
@@ -227,6 +237,14 @@ public partial class SchemaManagerWindow : Window
         catch (Exception ex) { ShowError("Unsupported column type", ex); return; }
         if (designer.ShowDialog() != true) return;
         var candidate = designer.Definition[0];
+        if (AccessFieldMetadata.IsSameType(field, candidate))
+        {
+            MessageBox.Show(this,
+                "The field already has that data type and size. " +
+                "No database change or backup is necessary.",
+                "No changes to save", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
         if (MessageBox.Show(this,
             "Change the type of " + table + "." + field.Name + " to " +
             candidate.Kind + "?\n\nExisting values may be truncated, converted or rejected. " +

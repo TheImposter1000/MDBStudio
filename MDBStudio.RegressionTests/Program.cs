@@ -38,6 +38,8 @@ internal static class Program
         TestSchemaEditingSql();
         TestFirstTableWorkspace();
         TestFullEmptyTableRedesign();
+        TestActualAccessColumnMetadata();
+        TestSafeFieldConversions();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -515,6 +517,89 @@ internal static class Program
             catch (InvalidOperationException) { rejected = true; }
             Check(rejected, "Invalid or ambiguous schema migration must be rejected before any file is touched.");
         }
+    }
+
+    private static void TestActualAccessColumnMetadata()
+    {
+        var table = new DataTable("tblWorker");
+        var text = table.Columns.Add("GenderID", typeof(string));
+        // FillSchema often reports -1 even when the underlying Access
+        // field is a normal TEXT(40), not a MEMO/LongText field.
+        text.MaxLength = -1;
+        Check(AccessFieldMetadata.FriendlyType(text,
+              (int)System.Data.OleDb.OleDbType.VarWChar, 40) == "Short Text",
+            "Access short text must not be reported as Long Text just because MaxLength=-1.");
+        Check(AccessFieldMetadata.TextLength(text, 40) == 40,
+            "Use Access schema declared text length instead of FillSchema fallback.");
+        Check(AccessFieldMetadata.FriendlyType(text,
+              (int)System.Data.OleDb.OleDbType.LongVarWChar, -1) == "Long Text",
+            "True Access MEMO/LongText fields must remain distinguishable.");
+        var schema = new DataTable();
+        schema.Columns.Add("COLUMN_NAME", typeof(string));
+        schema.Columns.Add("DATA_TYPE", typeof(int));
+        schema.Columns.Add("CHARACTER_MAXIMUM_LENGTH", typeof(int));
+        schema.Rows.Add("GenderID", (int)System.Data.OleDb.OleDbType.VarWChar, 80);
+        var metadata = AccessFieldMetadata.ReadColumnMetadata(schema, "genderid");
+        Check(metadata.Type == (int)System.Data.OleDb.OleDbType.VarWChar &&
+              metadata.Length == 80, "Case-insensitive metadata lookup must find the declared size.");
+        Check(AccessFieldMetadata.ReadColumnMetadata(schema, "Unknown").Type is null,
+            "Absent column metadata should not invent a field type.");
+
+        var original = new SchemaColumnInfo("GenderID", "Short Text", 80, false, false);
+        Check(AccessFieldMetadata.IsSameType(original,
+              new AccessFieldDefinition("GenderID", AccessFieldKind.ShortText, 80)),
+            "Reviewing an unchanged field should be a no-op, not ALTER COLUMN.");
+        Check(!AccessFieldMetadata.IsSameType(original,
+              new AccessFieldDefinition("GenderID", AccessFieldKind.ShortText, 50)),
+            "A changed short text size must be recognized as a real conversion.");
+    }
+
+    private static void TestSafeFieldConversions()
+    {
+        var intField = new AccessFieldDefinition("GenderID", AccessFieldKind.Integer);
+        Check((int)AccessFieldConversion.Normalize("-1", intField)! == -1 &&
+              (int)AccessFieldConversion.Normalize(" 125 ", intField)! == 125,
+            "Signed TEW identifiers and trimmed integers should be preserved.");
+        Check(AccessFieldConversion.Matches("-1", -1, intField),
+            "A source text integer must compare exactly to the converted Access number.");
+        Check(AccessFieldConversion.Normalize(DBNull.Value, intField) is null,
+            "NULL values must stay NULL across schema conversion.");
+        var shortText = new AccessFieldDefinition("Name", AccessFieldKind.ShortText, 5);
+        Check((string)AccessFieldConversion.Normalize("Janet", shortText)! == "Janet",
+            "Fitting text values should be accepted.");
+        Check((bool)AccessFieldConversion.Normalize("-1",
+              new AccessFieldDefinition("Active", AccessFieldKind.YesNo))!,
+            "Access YesNo -1 must be parsed as true.");
+        Check((decimal)AccessFieldConversion.Normalize("19.5000",
+              new AccessFieldDefinition("Price", AccessFieldKind.Currency))! == 19.5m,
+            "Currency conversion must preserve valid four-decimal values.");
+
+        foreach (Action invalid in new Action[]
+        {
+            () => AccessFieldConversion.Normalize("Female", intField),
+            () => AccessFieldConversion.Normalize("1.5", intField),
+            () => AccessFieldConversion.Normalize("2147483648", intField),
+            () => AccessFieldConversion.Normalize("Janet-Smith", shortText),
+            () => AccessFieldConversion.Normalize("not-a-date",
+                new AccessFieldDefinition("Birth", AccessFieldKind.DateTime)),
+            () => AccessFieldConversion.Normalize("maybe",
+                new AccessFieldDefinition("Active", AccessFieldKind.YesNo)),
+            () => AccessFieldConversion.Normalize("1.12345",
+                new AccessFieldDefinition("Price", AccessFieldKind.Currency))
+        })
+        {
+            bool rejected = false;
+            try { invalid(); }
+            catch (FormatException) { rejected = true; }
+            Check(rejected,
+                "A mismatched or lossy stored value must be rejected before any MDB mutation.");
+        }
+
+        Check(!AccessFieldConversion.Matches("5", 6, intField) &&
+              AccessFieldConversion.Matches("5", 5, intField),
+            "After staged ALTER, record values must match original values exactly.");
+        Check(AccessFieldConversion.DisplaySample("first\r\nsecond").Contains("first  second"),
+            "Error examples should be readable and not include control characters.");
     }
 
     private static DataTable Example()

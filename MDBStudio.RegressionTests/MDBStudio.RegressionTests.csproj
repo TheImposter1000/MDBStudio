@@ -21,6 +21,9 @@
     <Compile Include="../MDBStudio/AccessSession.cs" Link="AccessSession.cs"/>
     <Compile Include="../MDBStudio/AccessSession.Schema.cs" Link="AccessSession.Schema.cs"/>
     <Compile Include="../MDBStudio/AccessSession.TableRedesign.cs" Link="AccessSession.TableRedesign.cs"/>
+    <Compile Include="../MDBStudio/AccessSession.FieldConversion.cs" Link="AccessSession.FieldConversion.cs"/>
+    <Compile Include="../MDBStudio/AccessFieldMetadata.cs" Link="AccessFieldMetadata.cs"/>
+    <Compile Include="../MDBStudio/AccessFieldConversion.cs" Link="AccessFieldConversion.cs"/>
     <Compile Include="../MDBStudio/EmptyTableRedesign.cs" Link="EmptyTableRedesign.cs"/>
     <Compile Include="../MDBStudio/AccessSchemaSql.cs" Link="AccessSchemaSql.cs"/>
     <Compile Include="../MDBStudio/DatabaseWorkspaceSetup.cs" Link="DatabaseWorkspaceSetup.cs"/>
