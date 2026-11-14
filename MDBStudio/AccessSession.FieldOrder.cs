@@ -175,6 +175,7 @@ public sealed partial class AccessSession
         object engine = Activator.CreateInstance(engineType)
             ?? throw new InvalidOperationException("Could not start Microsoft Access DAO.");
         object? database = null;
+        object? tableDefinitions = null;
         object? tableDefinition = null;
         object? fieldCollection = null;
         try
@@ -185,7 +186,9 @@ public sealed partial class AccessSession
             database = dao.OpenDatabase(path, false, false,
                 string.IsNullOrEmpty(password) ? "" : ";PWD=" + password);
             dynamic db = database;
-            tableDefinition = db.TableDefs[table];
+            tableDefinitions = db.TableDefs;
+            dynamic definitions = tableDefinitions;
+            tableDefinition = definitions[table];
             dynamic definition = tableDefinition;
             fieldCollection = definition.Fields;
             return operation(fieldCollection);
@@ -196,6 +199,7 @@ public sealed partial class AccessSession
             {
                 ReleaseDao(fieldCollection);
                 ReleaseDao(tableDefinition);
+                ReleaseDao(tableDefinitions);
                 if (database is not null)
                 {
                     try { ((dynamic)database).Close(); }
