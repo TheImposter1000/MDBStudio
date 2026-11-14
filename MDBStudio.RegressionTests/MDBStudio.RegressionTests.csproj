@@ -26,6 +26,7 @@
     <Compile Include="../MDBStudio/AccessFieldConversion.cs" Link="AccessFieldConversion.cs"/>
     <Compile Include="../MDBStudio/EmptyTableRedesign.cs" Link="EmptyTableRedesign.cs"/>
     <Compile Include="../MDBStudio/AccessSchemaSql.cs" Link="AccessSchemaSql.cs"/>
+    <Compile Include="../MDBStudio/TableColumnLayout.cs" Link="TableColumnLayout.cs"/>
     <Compile Include="../MDBStudio/DatabaseWorkspaceSetup.cs" Link="DatabaseWorkspaceSetup.cs"/>
     <Compile Include="../MDBStudio/VisualQuerySql.cs" Link="VisualQuerySql.cs"/>
     <Compile Include="../MDBStudio/AccessDatabaseCreator.cs" Link="AccessDatabaseCreator.cs"/>
