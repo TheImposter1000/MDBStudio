@@ -41,6 +41,7 @@ internal static class Program
         TestActualAccessColumnMetadata();
         TestSafeFieldConversions();
         TestColumnOrderingAndCellSwap();
+        TestPermanentAccessFieldOrder();
         Console.WriteLine("Paste identity regression tests passed.");
         return 0;
     }
@@ -672,6 +673,47 @@ internal static class Program
         Check((string)table.Rows[0][company] == "Company B" &&
               table.Rows[1][company] == DBNull.Value,
             "Swapping a NULL must preserve NULL instead of converting it to an empty string.");
+    }
+
+    private static void TestPermanentAccessFieldOrder()
+    {
+        // This reproduces tblWorker, where a datasheet shows User immediately
+        // after Name but the actual Access design still has User further down.
+        var persisted = new[] { "UID", "Name", "Short Name", "Picture",
+            "BiographyType", "Born", "User", "Gender" };
+        var moved = new[] { "UID", "Name", "User", "Short Name", "Picture",
+            "BiographyType", "Born", "Gender" };
+        var checkedOrder = AccessFieldOrder.Validate(persisted, moved);
+        Check(checkedOrder.SequenceEqual(moved),
+            "Design View must accept a different field order without changing fields or records.");
+        Check(AccessFieldOrder.Same(checkedOrder, moved) &&
+              !AccessFieldOrder.Same(persisted, moved),
+            "The schema reorder must detect which changes need saving.");
+        Check(AccessFieldOrder.Validate(persisted,
+              new[] { "uid", "NAME", "user", "Short Name", "Picture",
+                  "BiographyType", "Born", "Gender" })
+              .SequenceEqual(moved),
+            "Access field ordering should be insensitive to identifier case while retaining spelling.");
+
+        var preferred = TableColumnLayout.Apply(persisted,
+            new[] { "UID", "Name", "User", "Short Name", "Picture" });
+        Check(preferred.SequenceEqual(moved),
+            "A saved datasheet arrangement should be convertible to a permanent design order.");
+
+        foreach (var proposed in new[]
+        {
+            new[] { "UID", "Name" },
+            new[] { "UID", "Name", "User", "Short Name", "Picture",
+                "BiographyType", "Born", "Unknown" },
+            new[] { "UID", "Name", "User", "Short Name", "Picture",
+                "BiographyType", "Born", "Name" }
+        })
+        {
+            bool rejected = false;
+            try { AccessFieldOrder.Validate(persisted, proposed); }
+            catch (InvalidOperationException) { rejected = true; }
+            Check(rejected, "Reordering must reject missing, duplicate or invented database columns.");
+        }
     }
 
     private static DataTable Example()
