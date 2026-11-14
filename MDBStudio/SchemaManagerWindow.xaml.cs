@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 
 namespace MDBStudio;
 
@@ -12,6 +14,11 @@ public partial class SchemaManagerWindow : Window
     private readonly AccessSession _session;
     private bool _updating;
     private bool _ready;
+    private List<SchemaColumnInfo> _fieldOrder = new();
+    private string[] _originalFieldOrder = Array.Empty<string>();
+    private Point _dragStart;
+    private SchemaColumnInfo? _dragSource;
+
     public string? SelectedTable => TablesCombo.SelectedItem as string;
     public bool StructureChanged { get; private set; }
 
@@ -54,6 +61,8 @@ public partial class SchemaManagerWindow : Window
         if (SelectedTable is not string table)
         {
             FieldsGrid.ItemsSource = null;
+            _fieldOrder.Clear();
+            _originalFieldOrder = Array.Empty<string>();
             IndexColumnCombo.ItemsSource = null;
             ChildFieldCombo.ItemsSource = null;
             IndexesCombo.ItemsSource = null;
@@ -65,7 +74,12 @@ public partial class SchemaManagerWindow : Window
         try
         {
             var info = _session.InspectTable(table);
-            FieldsGrid.ItemsSource = info.Columns;
+            var byName = info.Columns.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
+            var currentOrder = _session.ReadDesignFieldOrder(table);
+            _fieldOrder = currentOrder.Select(name => byName[name]).ToList();
+            _originalFieldOrder = currentOrder.ToArray();
+            FieldsGrid.ItemsSource = _fieldOrder;
+            UpdateFieldOrderButtons();
             string[] columns = info.Columns.Select(c => c.Name).ToArray();
             IndexColumnCombo.ItemsSource = columns;
             ChildFieldCombo.ItemsSource = columns;
@@ -87,6 +101,10 @@ public partial class SchemaManagerWindow : Window
     private void SetTableActions(bool enabled)
     {
         AddFieldButton.IsEnabled = enabled;
+        MoveFieldUpButton.IsEnabled = enabled;
+        MoveFieldDownButton.IsEnabled = enabled;
+        MatchDatasheetOrderButton.IsEnabled = enabled;
+        SaveFieldOrderButton.IsEnabled = false;
         ChangeFieldButton.IsEnabled = enabled;
         EditTableDesignButton.IsEnabled = enabled;
         DropFieldButton.IsEnabled = enabled;
@@ -112,6 +130,134 @@ public partial class SchemaManagerWindow : Window
             if (ParentFieldCombo.Items.Count > 0) ParentFieldCombo.SelectedIndex = 0;
         }
         catch (Exception ex) { ShowError("Cannot read referenced table", ex); }
+    }
+
+    private void UpdateFieldOrderButtons()
+    {
+        bool hasTable = SelectedTable is not null && _fieldOrder.Count > 0;
+        MoveFieldUpButton.IsEnabled = hasTable && _fieldOrder.Count > 1;
+        MoveFieldDownButton.IsEnabled = hasTable && _fieldOrder.Count > 1;
+        MatchDatasheetOrderButton.IsEnabled = hasTable;
+        SaveFieldOrderButton.IsEnabled = hasTable &&
+            !AccessFieldOrder.Same(_originalFieldOrder,
+                _fieldOrder.Select(field => field.Name).ToArray());
+    }
+
+    private void RedrawFields(SchemaColumnInfo? selected)
+    {
+        FieldsGrid.ItemsSource = null;
+        FieldsGrid.ItemsSource = _fieldOrder;
+        if (selected is not null)
+        {
+            FieldsGrid.SelectedItem = selected;
+            FieldsGrid.ScrollIntoView(selected);
+        }
+        UpdateFieldOrderButtons();
+        if (SaveFieldOrderButton.IsEnabled)
+            ResultLabel.Text = "Field order changed. Select Save field order to write it into the MDB.";
+    }
+
+    private void MoveSelectedField(int direction)
+    {
+        if (FieldsGrid.SelectedItem is not SchemaColumnInfo selected) return;
+        int index = _fieldOrder.IndexOf(selected);
+        int destination = index + direction;
+        if (index < 0 || destination < 0 || destination >= _fieldOrder.Count) return;
+        _fieldOrder.RemoveAt(index);
+        _fieldOrder.Insert(destination, selected);
+        RedrawFields(selected);
+    }
+
+    private void MoveFieldUp_Click(object sender, RoutedEventArgs e) => MoveSelectedField(-1);
+    private void MoveFieldDown_Click(object sender, RoutedEventArgs e) => MoveSelectedField(1);
+
+    private void MatchDatasheetOrder_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedTable is not string table) return;
+        var preferred = TableColumnLayout.Load(_session.FilePath, table);
+        if (preferred.Count == 0)
+        {
+            ResultLabel.Text = "No custom datasheet column arrangement saved for " + table + ".";
+            return;
+        }
+
+        var desired = TableColumnLayout.Apply(
+            _fieldOrder.Select(f => f.Name).ToArray(), preferred);
+        var lookup = _fieldOrder.ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
+        _fieldOrder = desired.Select(name => lookup[name]).ToList();
+        RedrawFields(null);
+        ResultLabel.Text = SaveFieldOrderButton.IsEnabled
+            ? "Datasheet arrangement loaded. Select Save field order to apply it to the database."
+            : "The database field order already matches your datasheet arrangement.";
+    }
+
+    private void SaveFieldOrder_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedTable is not string table || !SaveFieldOrderButton.IsEnabled) return;
+        string[] names = _fieldOrder.Select(f => f.Name).ToArray();
+        Apply(() =>
+        {
+            // DAO updates Access's real TableDef.Fields.OrdinalPosition,
+            // even when the table already contains records.
+            _session.ReorderTableFields(table, names);
+            // The datasheet should now reflect the persisted schema order.
+            TableColumnLayout.Save(_session.FilePath, table, names);
+        }, "Saved actual field order for " + table + ".", table);
+    }
+
+    private static DataGridRow? FieldRowFromSource(object source)
+    {
+        DependencyObject? current = source as DependencyObject;
+        while (current is not null)
+        {
+            if (current is DataGridRow row) return row;
+            current = current is Visual ? VisualTreeHelper.GetParent(current) : null;
+        }
+        return null;
+    }
+
+    private void FieldsGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _dragStart = e.GetPosition(FieldsGrid);
+        _dragSource = FieldRowFromSource(e.OriginalSource)?.Item as SchemaColumnInfo;
+    }
+
+    private void FieldsGrid_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_dragSource is null || e.LeftButton != MouseButtonState.Pressed) return;
+        Point pointer = e.GetPosition(FieldsGrid);
+        if (Math.Abs(pointer.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(pointer.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+
+        SchemaColumnInfo source = _dragSource;
+        _dragSource = null;
+        DragDrop.DoDragDrop(FieldsGrid,
+            new DataObject(typeof(SchemaColumnInfo), source), DragDropEffects.Move);
+    }
+
+    private void FieldsGrid_DragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(typeof(SchemaColumnInfo))
+            ? DragDropEffects.Move : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void FieldsGrid_Drop(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetData(typeof(SchemaColumnInfo)) is not SchemaColumnInfo from ||
+            FieldRowFromSource(e.OriginalSource)?.Item is not SchemaColumnInfo to)
+            return;
+
+        int source = _fieldOrder.IndexOf(from);
+        int destination = _fieldOrder.IndexOf(to);
+        if (source >= 0 && destination >= 0 && source != destination)
+        {
+            _fieldOrder.RemoveAt(source);
+            _fieldOrder.Insert(destination, from);
+            RedrawFields(from);
+        }
+        e.Handled = true;
     }
 
     private void TableChanged(object sender, SelectionChangedEventArgs e) => DisplayTable();
