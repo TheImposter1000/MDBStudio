@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Unique stable version tag (for example v1.3.4)"
+        description: "Unique stable version tag (for example v1.3.5)"
         required: true
-        default: "v1.3.4"
+        default: "v1.3.5"
         type: string
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ inputs.tag || 'v1.3.4' }}
+      RELEASE_TAG: ${{ inputs.tag || 'v1.3.5' }}
     steps:
       - name: Check out reviewed source
         uses: actions/checkout@v4
@@ -35,7 +35,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
-            throw "Normal releases require semantic version tags such as v1.3.4."
+            throw "Normal releases require semantic version tags such as v1.3.5."
           }
           [xml] $project = Get-Content "MDBStudio/MDBStudio.csproj"
           $projectVersion = [string]$project.Project.PropertyGroup.Version
@@ -80,7 +80,7 @@ jobs:
             ""
             "Standard Windows release, published from the C# and WPF source in this repository."
             ""
-            "Adds drag-to-reorder datasheet columns with per-table saved layouts, move-up and move-down field controls in table design, and swap-two-selected-cells. Removes repeated confirmation dialogs for record, field, index, and table deletion, and other schema changes. Deleting records commits immediately when no other edits are pending; otherwise deletion joins the unsaved changes. Silent automatic database backups and Access integrity checks remain."
+            "Adds true Access Design View field ordering on existing tables, including populated TEW-style MDBs. Drag field rows or Move up/down, then Save field order to update DAO TableDef.Fields.OrdinalPosition in the actual database. Match datasheet order imports a previously saved visual arrangement. Reorder changes no field types, keys, relationships or record values. The operation runs on a temporary copy, verifies the actual order, and retains a silent database backup. Also includes direct deletion and cell swapping from v1.3.4."
             ""
             "The ZIP includes the app and a separate self-contained updater. Use the in-app Check & install updates button if you have v1.0.2 or newer."
             ""
